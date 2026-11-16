@@ -50,8 +50,8 @@ github.com/mfridman/interpolate v0.2.0 h1:HM9ID8p6CUxoMJX+fECOtGQ2Mu7TW/GIMPyu48
 github.com/mfridman/interpolate v0.2.0/go.mod h1:8SfDy95IaPNnIokZh9mvIppmc3fGl8fx+Gu7uusuO9Q=
 github.com/ncruces/go-strftime v1.1.0 h1:vtPmPWMkb539RGV9WpWT9EwJGvrOCKvMNI4obWL47Hk=
 github.com/ncruces/go-strftime v1.1.0/go.mod h1:yVaq7iwCN09vHRrKBrrflXT0M9tTMG2KmZ9Fj7xeG/g=
-github.com/onsi/gomega v1.42.1 h1:iN1rCUX+44NZ1Dc97MPoeFYbFR0vh8zxoxMFwKdyZ6I=
-github.com/onsi/gomega v1.42.1/go.mod h1:REff/hsDsodHoKlWsP2mAPhu1+5/6hVYNf9rIEBpeSg=
+github.com/onsi/gomega v1.44.0 h1:eAiGl3Pw5jz5GQdDff0BcxYpAX1JxW8xD7mFUuwNfZQ=
+github.com/onsi/gomega v1.44.0/go.mod h1:e/C2HwaZ1DhvjzXXuFhcR7hY7Sh9pl7MmoWKEjzwcdA=
 github.com/philhofer/fwd v1.2.0 h1:e6DnBTl7vGY+Gz322/ASL4Gyp1FspeMvx1RNDoToZuM=
 github.com/philhofer/fwd v1.2.0/go.mod h1:RqIHx9QI14HlwKwm98g9Re5prTQ6LdeRQn+gXJFxsJM=
 github.com/pires/go-proxyproto v0.16.0 h1:9KYT/fM3wpjT8bdMEj/7FBcoiUG1KyzEjRYnPu+vz7A=
@@ -96,8 +96,8 @@ github.com/uptrace/bun/dialect/pgdialect v1.3.0 h1:0ZkGqGugxaPCxko4DV2f4d7i+FnM2
 github.com/uptrace/bun/dialect/pgdialect v1.3.0/go.mod h1:kP5HGEpAX8iJCqj3WHm04XnoeBPacdCN1P2HiwMtHpg=
 github.com/uptrace/bun/dialect/sqlitedialect v1.3.0 h1:XzxkORYksxkLsIQLJHFYUb3yDvqSQHzTungyKpJhHTw=
 github.com/uptrace/bun/dialect/sqlitedialect v1.3.0/go.mod h1:x2D1sY50Itio0I/FVdNe30oMUT2ObiAS+oILcMR+Wys=
-github.com/valkey-io/valkey-go v1.0.79 h1:dryzYka/oOkSMOcNmOTjQI8zfu/4bUzDZNnFW9NlqNM=
-github.com/valkey-io/valkey-go v1.0.79/go.mod h1:gvC/r2m3eW4Hbj0YnjogTzNtFdPSM/D+NCqen+5OABM=
+github.com/valkey-io/valkey-go v1.0.80 h1:nyjeE1W9RpUU1KcsApBLlzjisZMVmgTQBGmlsuC0vtE=
+github.com/valkey-io/valkey-go v1.0.80/go.mod h1:9M4jE0WGI4fBPijXwbmnO3T7hu5UCjI9ABx+jMCvekQ=
 github.com/vmihailenco/msgpack/v5 v5.4.1 h1:cQriyiUvjTwOHg8QZaPihLWeRAAVoCpE00IUPn0Bjt8=
 github.com/vmihailenco/msgpack/v5 v5.4.1/go.mod h1:GaZTsDaehaPpQVyxrf5mtQlH+pc21PIudVV/E3rRQok=
 github.com/vmihailenco/tagparser/v2 v2.0.0 h1:y09buUbR+b5aycVFQs/g70pqKVZNBmxwAhO7/IwNM9g=
