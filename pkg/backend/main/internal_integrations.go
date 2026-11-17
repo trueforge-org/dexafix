@@ -40,6 +40,17 @@ func (s *Backend) internalIntegrationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+u+"/strengthlevel/day", s.internalUser(s.internalSLDay))
 }
 
+// buttonImportSince is where an import started by a button begins: the start of yesterday in the
+// user's time zone, so today and yesterday are fetched.
+func buttonImportSince(now time.Time, zone string) time.Time {
+	loc, err := time.LoadLocation(zone)
+	if err != nil {
+		loc = time.UTC
+	}
+	y := now.In(loc).AddDate(0, 0, -1)
+	return time.Date(y.Year(), y.Month(), y.Day(), 0, 0, 0, 0, loc).UTC()
+}
+
 func flashed(w http.ResponseWriter, msg string) {
 	internalJSON(w, http.StatusOK, apiclient.Flash{Message: msg})
 }
@@ -47,7 +58,10 @@ func flashed(w http.ResponseWriter, msg string) {
 // ---- provider imports and OAuth ----
 
 func (s *Backend) internalImport(w http.ResponseWriter, r *http.Request, u models.User) {
-	var in struct{ Day string }
+	var in struct {
+		Day string
+		All bool
+	}
 	if !internalDecode(w, r, &in) {
 		return
 	}
@@ -60,6 +74,11 @@ func (s *Backend) internalImport(w http.ResponseWriter, r *http.Request, u model
 	if err != nil {
 		flashed(w, err.Error())
 		return
+	}
+	if in.Day == "" && !in.All {
+		// The button asks for the last days only, so a click does not pull the whole history from the
+		// provider; "Sync all" in the settings asks for everything.
+		opts.Since = buttonImportSince(time.Now(), u.Timezone)
 	}
 	if _, msg := s.importBlocker(r, p, u.ID); msg != "" {
 		flashed(w, msg)

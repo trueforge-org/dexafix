@@ -159,11 +159,12 @@
     {{if .Connected}}<span class="status on">Connected</span>{{else if .Configured}}<span class="status">Not connected</span>{{else}}<span class="status">Not set up</span>{{end}}
   </div>
   {{if .Connected}}
-  <p class="help">Your Withings account is linked. Import fetches all your measurements: it fills days without readings and leaves days with manual readings alone. Disconnecting keeps the readings already imported.</p>
+  <p class="help">Your Withings account is linked. Import fetches the last two days; Sync all history fetches every measurement, which is heavy on Withings, so use it once after connecting. Both fill days without readings and leave days with manual readings alone. Disconnecting keeps the readings already imported.</p>
   {{if .AutoPaused}}<p class="notice" role="status">{{.AutoPaused}} They start again when you disconnect and connect Withings again, or when an administrator resumes them.</p>{{end}}
   <div class="form-actions">
     <form method="post" action="/u/{{$.User.ID}}/integrations/withings/disconnect" class="start"><button type="submit" class="danger">Disconnect Withings</button></form>
-    <form method="post" action="/u/{{$.User.ID}}/import/withings"><button type="submit">Import from Withings</button></form>
+    <form method="post" action="/u/{{$.User.ID}}/import/withings"><button type="submit">Import last 2 days</button></form>
+    <form method="post" action="/u/{{$.User.ID}}/import/withings"><input type="hidden" name="all" value="1"><button type="submit" class="secondary">Sync all history</button></form>
   </div>
   {{else if .Configured}}
   <p class="help">Link your Withings account to import your scale measurements instead of typing them in. You will be sent to Withings to grant access.</p>

@@ -458,15 +458,19 @@ func TestWithingsFlow(t *testing.T) {
 		t.Fatalf("connected: %q", msg)
 	}
 
-	if _, b := body(t, c, ts.URL+"/u/1/estimates"); !strings.Contains(b, "Import from Withings") || strings.Contains(b, "Connect Withings") {
+	if _, b := body(t, c, ts.URL+"/u/1/estimates"); !strings.Contains(b, "Import last 2 days from Withings") || strings.Contains(b, "Connect Withings") {
 		t.Fatalf("expected import button:\n%s", b)
 	}
-	if _, b := body(t, c, ts.URL+"/u/1/settings"); !strings.Contains(b, "Import from Withings") || !strings.Contains(b, "Disconnect Withings") || strings.Contains(b, "/integrations/withings/connect") {
+	if _, b := body(t, c, ts.URL+"/u/1/settings"); !strings.Contains(b, "Import last 2 days") || !strings.Contains(b, "Sync all history") || !strings.Contains(b, "Disconnect Withings") || strings.Contains(b, "/integrations/withings/connect") {
 		t.Fatalf("expected import and disconnect in settings:\n%s", b)
 	}
 	// a manual reading on the first day must be protected from the bulk import
 	post(t, c, ts.URL+"/u/1/scale", url.Values{"measured_at": {"2026-03-01T09:00"}, "weight_kg": {"81"}})
-	if msg := flash(post(t, c, ts.URL+"/u/1/import/withings", nil)); !strings.Contains(msg, "1 imported") || !strings.Contains(msg, "1 day(s) skipped") || !strings.Contains(msg, "2026-03-01") {
+	// the plain button only asks for the last two days, which hold nothing of this old data
+	if msg := flash(post(t, c, ts.URL+"/u/1/import/withings", nil)); !strings.Contains(msg, "nothing found") {
+		t.Fatalf("two-day msg %q", msg)
+	}
+	if msg := flash(post(t, c, ts.URL+"/u/1/import/withings", url.Values{"all": {"1"}})); !strings.Contains(msg, "1 imported") || !strings.Contains(msg, "1 day(s) skipped") || !strings.Contains(msg, "2026-03-01") {
 		t.Fatalf("bulk msg %q", msg)
 	}
 	_, b := body(t, c, ts.URL+"/u/1/estimates?range=all")

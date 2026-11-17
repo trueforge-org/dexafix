@@ -18,9 +18,20 @@ func providerPath(userID int64, provider, rest string) string {
 
 // Import fetches the provider's measurements now. day (YYYY-MM-DD) limits it to one day. The
 // message summarises the result or the failure.
+//
+// Without a day only the last two days are fetched; ImportAll fetches the whole history.
 func (c *Client) Import(ctx context.Context, userID int64, provider, day string) (Flash, error) {
+	return c.importWith(ctx, userID, provider, day, false)
+}
+
+// ImportAll fetches the provider's whole history, which is heavy on the provider and on us.
+func (c *Client) ImportAll(ctx context.Context, userID int64, provider string) (Flash, error) {
+	return c.importWith(ctx, userID, provider, "", true)
+}
+
+func (c *Client) importWith(ctx context.Context, userID int64, provider, day string, all bool) (Flash, error) {
 	var f Flash
-	err := c.Post(ctx, userPath(userID, "/import/"+url.PathEscape(provider)), map[string]string{"day": day}, &f)
+	err := c.Post(ctx, userPath(userID, "/import/"+url.PathEscape(provider)), map[string]any{"day": day, "all": all}, &f)
 	return f, err
 }
 

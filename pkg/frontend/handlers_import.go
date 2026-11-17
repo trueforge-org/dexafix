@@ -20,9 +20,15 @@ func flashRedirect(w http.ResponseWriter, r *http.Request, userID int64, msg str
 
 // integrationPageRoutes registers the pages of imports and the OAuth flow. Everything is per user.
 func (s *Frontend) integrationPageRoutes(mux *http.ServeMux) {
-	// POST /u/{id}/import/{provider} with an optional day form value (the estimates page buttons).
+	// POST /u/{id}/import/{provider} with an optional day form value (the estimates page buttons), or all=1 for the whole history (Settings).
 	mux.HandleFunc("POST /u/{id}/import/{provider}", s.user(func(w http.ResponseWriter, r *http.Request, u models.User) {
-		f, err := s.api.Import(r.Context(), u.ID, r.PathValue("provider"), r.PostFormValue("day"))
+		var f apiclient.Flash
+		var err error
+		if r.PostFormValue("all") == "1" {
+			f, err = s.api.ImportAll(r.Context(), u.ID, r.PathValue("provider"))
+		} else {
+			f, err = s.api.Import(r.Context(), u.ID, r.PathValue("provider"), r.PostFormValue("day"))
+		}
 		if err != nil {
 			s.fail(w, err)
 			return

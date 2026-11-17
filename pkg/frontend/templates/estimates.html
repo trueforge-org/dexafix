@@ -3,7 +3,7 @@
   <h1>Estimated results {{help "how-estimates-work"}}</h1>
   {{with .Withings}}<div class="integration">
   {{if .Connected}}
-    <form method="post" action="/u/{{$.User.ID}}/import/withings"><button type="submit" title="Fetch all Withings measurements: fills days without readings first and leaves days with manual readings alone">Import from Withings</button></form>
+    <form method="post" action="/u/{{$.User.ID}}/import/withings"><button type="submit" title="Fetch the Withings measurements of today and yesterday. The Withings card in Settings fetches the whole history.">Import last 2 days from Withings</button></form>
     <form method="post" action="/u/{{$.User.ID}}/integrations/withings/disconnect"><button type="submit" class="secondary">Disconnect Withings</button></form>
   {{else if .Configured}}<a class="button" href="/u/{{$.User.ID}}/integrations/withings/connect">Connect Withings</a>
   {{else}}<a class="button secondary" href="/u/{{$.User.ID}}/settings#withings">Set up Withings</a>{{end}}
