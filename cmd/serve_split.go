@@ -311,9 +311,8 @@ API and another the internal one on the same database.`,
 			servers = append(servers, pub)
 		}
 		if len(workerGroups) > 0 {
-			if err := srv.SetWorkerSecrets(workerGroups...); err != nil {
-				return err
-			}
+			// Cannot fail: loadWorkerSecretGroups checked the providers, and that no secret is in two groups.
+			must.Do(srv.SetWorkerSecrets(workerGroups...))
 		}
 		if internal != "" {
 			srv.SetServiceSecrets(secrets...)

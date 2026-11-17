@@ -69,6 +69,11 @@ func TestTheAPIUpstreamGetsOnlyWhatThisProcessSettled(t *testing.T) {
 			t.Errorf("the upstream saw %v", seen)
 		}
 	})
+	t.Run("an export goes through, with a longer time to write it", func(t *testing.T) {
+		if resp := get("/api/v1/users/1/export/data", nil); resp.StatusCode != http.StatusOK {
+			t.Errorf("export: %d", resp.StatusCode)
+		}
+	})
 	t.Run("a connection settled as secure is passed on as secure", func(t *testing.T) {
 		f.swapSettings(&frontendSettings{baseURL: &url.URL{Scheme: "https", Host: "dexa.example.com"}, tlsMode: apiclient.TLSOff, httpsPort: defaultHTTPSPort})
 		get("/api/v1/x", nil)

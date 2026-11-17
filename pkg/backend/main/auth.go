@@ -18,6 +18,7 @@ import (
 	"github.com/rs/zerolog/log"
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
+	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/store"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -326,9 +327,8 @@ func (s *Backend) verifyPassword(ctx context.Context, login, password string) (m
 	}
 	if cost, err := bcrypt.Cost([]byte(id.Secret)); err == nil && cost < bcryptCost {
 		// Best effort: the sign-in succeeded. This runs inside the password slot already.
-		if hash, err := hashPassword(password); err != nil {
-			log.Warn().Err(err).Msg("upgrade password hash")
-		} else if err := s.storePassword(ctx, u.ID, hash); err != nil {
+		hash := must.Value(hashPassword(password)) // cannot fail: the password just matched a hash, so it fits bcrypt's limit
+		if err := s.storePassword(ctx, u.ID, hash); err != nil {
 			log.Warn().Err(err).Msg("upgrade password hash")
 		}
 	}

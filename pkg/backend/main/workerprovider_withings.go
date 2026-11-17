@@ -9,6 +9,7 @@ import (
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/bodyapi"
+	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
 	"github.com/trueforge-org/dexafix/pkg/store"
 )
@@ -181,10 +182,7 @@ func (s *Backend) storeWithingsTokens(ctx context.Context, j models.Job, data js
 	if err := json.Unmarshal(data, &t); err != nil || t.AccessToken == "" || t.RefreshToken == "" {
 		return errBadResult
 	}
-	data, err := json.Marshal(t) // cannot fail: strings and a time
-	if err != nil {
-		return err
-	}
+	data = must.Value(json.Marshal(t)) // cannot fail: strings and a time
 	if !connecting {
 		if _, err := s.store.GetIntegration(ctx, j.UserID, providerWithings); errors.Is(err, store.ErrNotFound) {
 			return nil

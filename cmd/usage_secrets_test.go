@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -83,5 +85,30 @@ func TestALegacyWorkerSecretFileStillWorksAndIsWarnedAbout(t *testing.T) {
 	addWorkerSecretFilesFlag(c)
 	if got, _ := c.Flags().GetStringSlice("worker-secret-file"); len(got) != 1 || got[0] != path {
 		t.Errorf("the old variable gives %v", got)
+	}
+}
+
+func TestTheWorkerSecretVariableHoldsSeveralEntries(t *testing.T) {
+	t.Setenv("DEXAFIX_WORKER_SECRET_FILES", "withings=/a;strengthlevel=/b")
+	c := &cobra.Command{}
+	addWorkerSecretFilesFlag(c)
+	if got, _ := c.Flags().GetStringSlice("worker-secret-file"); len(got) != 2 || got[0] != "withings=/a" || got[1] != "strengthlevel=/b" {
+		t.Errorf("entries %v", got)
+	}
+}
+
+func TestSecretsInitReportsWhatItCannotRead(t *testing.T) {
+	o, d := testInit(t)
+	o.workerDirs = nil
+	o.legacyWorkerDir = d["worker"]
+	if err := os.MkdirAll(filepath.Join(d["api"], fileWorkerSecret), 0o700); err != nil { // a folder where the secret file belongs
+		t.Fatal(err)
+	}
+	if err := o.run(); err == nil {
+		t.Error("a worker secret that cannot be read was accepted")
+	}
+	root := t.TempDir()
+	if _, _, err := run(t, "secrets", "init", "--host-dir", filepath.Join(root, "h"), "--api-dir", filepath.Join(root, "a"), "--worker-dir", "nosuch="+filepath.Join(root, "w")); err == nil {
+		t.Error("a worker dir of an unknown provider was accepted")
 	}
 }
