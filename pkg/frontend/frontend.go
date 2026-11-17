@@ -81,6 +81,7 @@ type frontendSettings struct {
 	http3         bool
 	httpsPort     string // TCP port for HTTPS, and UDP port for HTTP/3
 	analytics     apiclient.Analytics
+	adsTxt        string // served at /ads.txt
 }
 
 // NewFrontend builds a frontend that talks to the backend through api and parses the embedded
@@ -161,7 +162,7 @@ func (s *Frontend) RefreshConfig(ctx context.Context) error {
 // applyFrontendConfig puts the settings in force and rebuilds what depends on them: the
 // same-origin check and the listeners.
 func (s *Frontend) applyFrontendConfig(c apiclient.FrontendConfig) error {
-	l := &frontendSettings{tlsMode: c.TLSMode, httpsPort: c.HTTPSPort, proxyProtocol: c.ProxyProtocol, analytics: c.Analytics}
+	l := &frontendSettings{tlsMode: c.TLSMode, httpsPort: c.HTTPSPort, proxyProtocol: c.ProxyProtocol, analytics: c.Analytics, adsTxt: c.AdsTxt}
 	if l.tlsMode != apiclient.TLSUpload && l.tlsMode != apiclient.TLSSelfSigned {
 		l.tlsMode = apiclient.TLSOff
 	}

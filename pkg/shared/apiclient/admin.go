@@ -145,6 +145,7 @@ type AdminPage struct {
 	Require2FA      string // off, admins or everyone
 	Server          ServerSettingsView
 	Analytics       Analytics
+	AdsTxt          string // the text served at /ads.txt
 	SMTP            SMTPView
 	ResetByEmail    bool // users can ask for a reset e-mail
 	TLS             TLSView
@@ -249,6 +250,11 @@ type ServerForm struct {
 
 func (c *Client) AdminSaveServer(ctx context.Context, f ServerForm) (AdminResult, error) {
 	return c.adminDo(ctx, http.MethodPost, "/admin/server", f)
+}
+
+// AdminSaveAdsTxt stores the text served at /ads.txt; empty removes it.
+func (c *Client) AdminSaveAdsTxt(ctx context.Context, text string) (AdminResult, error) {
+	return c.adminDo(ctx, http.MethodPost, "/admin/ads-txt", map[string]string{"text": text})
 }
 
 // AdminSaveAnalytics stores the identifiers of the optional analytics and ad services; an empty one

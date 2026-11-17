@@ -35,6 +35,9 @@ type FrontendConfig struct {
 	// Analytics are the optional measuring and ad services an administrator turned on. The frontend
 	// loads them, after a visitor agrees, on the public pages only.
 	Analytics Analytics `json:"analytics"`
+
+	// AdsTxt is the text the frontend serves at /ads.txt; empty serves nothing.
+	AdsTxt string `json:"ads_txt,omitempty"`
 }
 
 // Analytics holds the identifiers of the optional services. An empty one is off.

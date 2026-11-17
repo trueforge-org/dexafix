@@ -27,6 +27,7 @@ func (s *Backend) frontendConfig(r *http.Request) (apiclient.FrontendConfig, err
 		HTTPSPort:     l.httpsPort,
 		HTTP3:         l.http3,
 		Analytics:     l.analytics,
+		AdsTxt:        l.adsTxt,
 	}
 	if l.baseURL != nil {
 		cfg.BaseURL = l.baseURL.String()

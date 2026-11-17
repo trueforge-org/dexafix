@@ -202,3 +202,67 @@ func TestAnalyticsSettingsNeedAnAdministratorAndAreAudited(t *testing.T) {
 		t.Error("the change was not audited")
 	}
 }
+
+func TestValidateAdsTxt(t *testing.T) {
+	for _, c := range []struct {
+		in, want string
+		bad      bool
+	}{
+		{"", "", false},
+		{"  \r\n ", "", false},
+		{"google.com, pub-1, DIRECT\r\nfoo.com, 2, RESELLER\r\n", "google.com, pub-1, DIRECT\nfoo.com, 2, RESELLER\n", false},
+		{"a\x00b", "", true},
+		{"a\xffb", "", true},
+		{strings.Repeat("x", maxAdsTxtBytes+1), "", true},
+	} {
+		got, msg := validateAdsTxt(c.in)
+		if (msg != "") != c.bad || got != c.want {
+			t.Errorf("validateAdsTxt(%q) = %q, %q; want %q, bad=%v", c.in, got, msg, c.want, c.bad)
+		}
+	}
+}
+
+func TestAdminSavesAdsTxtAndItIsServedAtTheRoot(t *testing.T) {
+	ts, root, _ := newAuthServer(t)
+	srv := serverOf(ts)
+	signup(t, ts, root, "root")
+	anon := noRedirectClient()
+
+	if resp := mustGetResp(t, anon, ts.URL+"/ads.txt"); resp.StatusCode != 404 {
+		t.Fatalf("unset ads.txt: status %d", resp.StatusCode)
+	}
+	if msg := flashOf(t, post(t, root, ts.URL+"/admin/ads-txt", url.Values{"ads_txt": {"a\x00b"}})); !strings.Contains(msg, "control") {
+		t.Errorf("flash %q", msg)
+	}
+	if v := storedSetting(t, srv, settingAdsTxt); v != "" {
+		t.Errorf("a refused save stored %q", v)
+	}
+
+	line := "google.com, pub-1234567890123456, DIRECT, f08c47fec0942fa0"
+	if msg := flashOf(t, post(t, root, ts.URL+"/admin/ads-txt", url.Values{"ads_txt": {line + "\r\n"}})); !strings.Contains(msg, "saved") {
+		t.Fatalf("flash %q", msg)
+	}
+	resp := mustGetResp(t, anon, ts.URL+"/ads.txt")
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/plain") {
+		t.Fatalf("status %d, type %q", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	if body := bodyOf(t, resp); body != line+"\n" {
+		t.Errorf("body %q", body)
+	}
+	if srv.cfg().analytics.Any() {
+		t.Error("ads.txt turned on the consent-gated services")
+	}
+	if page := bodyOf(t, mustGetResp(t, anon, ts.URL+"/")); strings.Contains(page, `id="consent"`) {
+		t.Error("ads.txt alone made the public pages offer a choice")
+	}
+	if page := bodyOf(t, mustGetResp(t, root, ts.URL+"/admin")); !strings.Contains(page, line) {
+		t.Error("the Admin page does not show the saved ads.txt")
+	}
+
+	if msg := flashOf(t, post(t, root, ts.URL+"/admin/ads-txt", url.Values{"ads_txt": {"  "}})); !strings.Contains(msg, "removed") {
+		t.Errorf("flash %q", msg)
+	}
+	if resp := mustGetResp(t, anon, ts.URL+"/ads.txt"); resp.StatusCode != 404 {
+		t.Errorf("removed ads.txt: status %d", resp.StatusCode)
+	}
+}

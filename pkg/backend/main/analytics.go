@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
@@ -91,4 +93,71 @@ func (s *Backend) internalAdminSaveAnalytics(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	adminMsgChanged(w, "Analytics and ads are off.")
+}
+
+// maxAdsTxtBytes bounds the ads.txt text; the IAB format is short lines, and large files are rare.
+const maxAdsTxtBytes = 64 << 10
+
+// validateAdsTxt normalises the text (Unix line ends, no surrounding blank space, one final
+// newline) and checks it is plain text. The message is for the administrator.
+func validateAdsTxt(in string) (string, string) {
+	t := strings.ReplaceAll(in, "\r\n", "\n")
+	t = strings.TrimSpace(strings.ReplaceAll(t, "\r", "\n"))
+	switch {
+	case len(t) > maxAdsTxtBytes:
+		return "", "The ads.txt text is too long (64 KiB at most)."
+	case !utf8.ValidString(t):
+		return "", "The ads.txt text must be plain UTF-8 text."
+	}
+	for _, r := range t {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return "", "The ads.txt text must be plain text without control characters."
+		}
+	}
+	if t == "" {
+		return "", ""
+	}
+	return t + "\n", ""
+}
+
+// adsTxtSetting reads the stored ads.txt. A value that no longer validates is ignored.
+func (s *Backend) adsTxtSetting(ctx context.Context) (string, error) {
+	v, err := s.settingValue(ctx, settingAdsTxt)
+	if err != nil {
+		return "", err
+	}
+	out, msg := validateAdsTxt(v)
+	if msg != "" {
+		return "", nil
+	}
+	return out, nil
+}
+
+func (s *Backend) internalAdminSaveAdsTxt(w http.ResponseWriter, r *http.Request, _ models.User) {
+	var in struct {
+		Text string `json:"text"`
+	}
+	if !internalDecode(w, r, &in) {
+		return
+	}
+	text, msg := validateAdsTxt(in.Text)
+	if msg != "" {
+		adminMsg(w, msg)
+		return
+	}
+	ctx := r.Context()
+	if err := s.putOrClear(ctx, settingAdsTxt, text); err != nil {
+		internalError(w, err)
+		return
+	}
+	if err := s.reloadSettings(ctx); err != nil {
+		internalError(w, err)
+		return
+	}
+	s.audit(r, 0, auditSettingChanged, "ads_txt")
+	if text == "" {
+		adminMsgChanged(w, "ads.txt removed.")
+		return
+	}
+	adminMsgChanged(w, "ads.txt saved. It is served at /ads.txt.")
 }

@@ -12,6 +12,7 @@ import (
 func (s *Frontend) adminSettingRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/server", s.admin(s.adminSaveServerSettings))
 	mux.HandleFunc("POST /admin/analytics", s.admin(s.adminSaveAnalytics))
+	mux.HandleFunc("POST /admin/ads-txt", s.admin(s.adminSaveAdsTxt))
 	mux.HandleFunc("POST /admin/smtp", s.admin(s.adminSaveSMTP))
 	mux.HandleFunc("POST /admin/smtp/test", s.admin(s.adminTestSMTP))
 }
@@ -31,6 +32,24 @@ func (s *Frontend) adminSaveAnalytics(w http.ResponseWriter, r *http.Request, _ 
 		AdSensePublisher: r.PostFormValue("adsense_publisher"),
 	})
 	s.adminDone(w, r, res, err)
+}
+
+func (s *Frontend) adminSaveAdsTxt(w http.ResponseWriter, r *http.Request, _ models.User) {
+	res, err := s.api.AdminSaveAdsTxt(r.Context(), r.PostFormValue("ads_txt"))
+	s.adminDone(w, r, res, err)
+}
+
+// adsTxt serves the administrator's ads.txt at the site root. It is public and needs no consent:
+// it is a file for ad crawlers, and loads nothing in a visitor's browser.
+func (s *Frontend) adsTxt(w http.ResponseWriter, r *http.Request) {
+	text := s.cfg().adsTxt
+	if text == "" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	w.Write([]byte(text))
 }
 
 func (s *Frontend) adminSaveSMTP(w http.ResponseWriter, r *http.Request, _ models.User) {

@@ -108,6 +108,11 @@
       <small>Shows ads with Google AdSense.</small></label>
     <div class="form-actions"><button type="submit">Save</button></div>
   </form>
+  <form method="post" action="/admin/ads-txt" class="fields section">
+    <label>ads.txt <textarea name="ads_txt" rows="5" spellcheck="false" autocomplete="off" placeholder="google.com, pub-1234567890123456, DIRECT, f08c47fec0942fa0">{{.AdsTxt}}</textarea>
+      <small>Served publicly at <code>/ads.txt</code> on the site root, for ad networks to check. Empty removes it. It does not turn anything on for visitors.</small></label>
+    <div class="form-actions"><button type="submit">Save ads.txt</button></div>
+  </form>
 </section>
 
 <section class="card" id="email-settings">

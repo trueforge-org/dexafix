@@ -35,6 +35,7 @@ const (
 	settingScarfPixel            = "analytics.scarf_pixel_id"
 	settingGoogleAnalytics       = "analytics.google_analytics_id"
 	settingAdSense               = "analytics.adsense_publisher"
+	settingAdsTxt                = "analytics.ads_txt"
 	settingSMTPHost              = "smtp.host"
 	settingSMTPPort              = "smtp.port"
 	settingSMTPUsername          = "smtp.username"
@@ -64,6 +65,7 @@ type liveSettings struct {
 	httpsPort             string // TCP port for HTTPS, and UDP port for HTTP/3
 	workers               workerSettings
 	analytics             apiclient.Analytics // the optional measuring and ad services; the frontend loads them
+	adsTxt                string              // served at /ads.txt
 	generation            int64               // the settings generation this set was read at; workers compare it
 }
 
@@ -225,6 +227,9 @@ func (s *Backend) reload(ctx context.Context, generate bool) error {
 		return err
 	}
 	if l.analytics, err = s.analyticsSettings(ctx); err != nil {
+		return err
+	}
+	if l.adsTxt, err = s.adsTxtSetting(ctx); err != nil {
 		return err
 	}
 	s.swapSettings(l)

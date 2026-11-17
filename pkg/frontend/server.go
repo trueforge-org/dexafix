@@ -70,6 +70,7 @@ func (s *Frontend) Handler() http.Handler {
 
 	s.integrationPageRoutes(mux)
 	s.exportPageRoutes(mux)
+	mux.HandleFunc("GET /ads.txt", s.adsTxt)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	s.frontendAPIRoutes(mux)
 	// Same-origin checks protect the cookie-authenticated forms. The Apple callback arrives as a
