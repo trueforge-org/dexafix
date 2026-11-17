@@ -202,6 +202,15 @@ type User struct {
 	// StrengthLevelBulk additionally allows the multi-day sync on the settings page. It needs
 	// StrengthLevelAuto.
 	StrengthLevelBulk bool `json:"-"`
+	// WithingsAutoAllowed is set by an administrator; WithingsAuto is the user's own switch for the
+	// daily sync of the last two days from Withings. It only counts while both are set.
+	WithingsAutoAllowed bool `json:"-"`
+	WithingsAuto        bool `json:"-"`
+	// StrengthLevelPushAllowed is set by an administrator; StrengthLevelPush is the user's own switch
+	// for sending the last days to Strength Level whenever new scale data arrives. Both need
+	// StrengthLevelAuto.
+	StrengthLevelPushAllowed bool `json:"-"`
+	StrengthLevelPush        bool `json:"-"`
 	// JobPriority (1-100) orders the user's worker jobs among those of other users: a higher number
 	// goes first. Administrators' jobs always go before everyone's. Set by an administrator.
 	JobPriority int `json:"-"`

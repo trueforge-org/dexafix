@@ -166,6 +166,16 @@ type Store interface {
 	// SetUserStrengthLevelBulk allows or forbids the multi-day sync on the settings page. It only
 	// has an effect for users who may sync at all.
 	SetUserStrengthLevelBulk(ctx context.Context, userID int64, enabled bool) error
+	// SetUserWithingsAutoAllowed lets an administrator allow or forbid the daily Withings sync.
+	// Forbidding it also clears the user's own switch.
+	SetUserWithingsAutoAllowed(ctx context.Context, userID int64, allowed bool) error
+	// SetUserWithingsAuto sets the user's own switch. It only has an effect when it is allowed.
+	SetUserWithingsAuto(ctx context.Context, userID int64, on bool) error
+	// SetUserStrengthLevelPushAllowed lets an administrator allow or forbid the automatic push to
+	// Strength Level after new scale data. Forbidding it also clears the user's own switch.
+	SetUserStrengthLevelPushAllowed(ctx context.Context, userID int64, allowed bool) error
+	// SetUserStrengthLevelPush sets the user's own switch. It only has an effect when it is allowed.
+	SetUserStrengthLevelPush(ctx context.Context, userID int64, on bool) error
 	// UpdateUserHiddenColumns stores which daily table columns the user has hidden.
 	UpdateUserHiddenColumns(ctx context.Context, userID int64, keys []string) error
 

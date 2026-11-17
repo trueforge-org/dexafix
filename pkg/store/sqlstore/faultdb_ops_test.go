@@ -127,6 +127,12 @@ func faultOps() []faultOp {
 		{"SetUserStrengthLevelBulk", func(c context.Context, s *Store, f faultData) error {
 			return s.SetUserStrengthLevelBulk(c, f.user, true)
 		}},
+		{"SetUserWithingsAutoAllowed", func(c context.Context, s *Store, f faultData) error {
+			return s.SetUserWithingsAutoAllowed(c, f.user, true)
+		}},
+		{"SetUserStrengthLevelPushAllowed", func(c context.Context, s *Store, f faultData) error {
+			return s.SetUserStrengthLevelPushAllowed(c, f.user, true)
+		}},
 		{"UpdateUserHiddenColumns", func(c context.Context, s *Store, f faultData) error {
 			return s.UpdateUserHiddenColumns(c, f.user, []string{"a"})
 		}},

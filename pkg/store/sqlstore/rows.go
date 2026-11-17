@@ -15,24 +15,28 @@ import (
 type userRow struct {
 	bun.BaseModel `bun:"table:users"`
 
-	ID                int64     `bun:"id,pk"` // random, see newUserID
-	Username          string    `bun:"username"`
-	FirstName         string    `bun:"first_name"`
-	LastName          string    `bun:"last_name"`
-	Role              string    `bun:"role"`
-	Email             string    `bun:"email"`
-	EmailLookup       *string   `bun:"email_lookup"`
-	HeightCm          *float64  `bun:"height_cm"`
-	Timezone          string    `bun:"timezone"`
-	CreatedAt         time.Time `bun:"created_at"`
-	AthleteDefault    bool      `bun:"athlete_default"`
-	MethodRanking     string    `bun:"method_ranking"`
-	HiddenColumns     string    `bun:"hidden_columns"`
-	StrengthLevelAuto bool      `bun:"strengthlevel_auto"`
-	StrengthLevelBulk bool      `bun:"strengthlevel_bulk"`
-	DataVersion       int64     `bun:"data_version"`
-	PasskeyHandle     *string   `bun:"passkey_handle"`
-	JobPriority       int       `bun:"job_priority"`
+	ID                       int64     `bun:"id,pk"` // random, see newUserID
+	Username                 string    `bun:"username"`
+	FirstName                string    `bun:"first_name"`
+	LastName                 string    `bun:"last_name"`
+	Role                     string    `bun:"role"`
+	Email                    string    `bun:"email"`
+	EmailLookup              *string   `bun:"email_lookup"`
+	HeightCm                 *float64  `bun:"height_cm"`
+	Timezone                 string    `bun:"timezone"`
+	CreatedAt                time.Time `bun:"created_at"`
+	AthleteDefault           bool      `bun:"athlete_default"`
+	MethodRanking            string    `bun:"method_ranking"`
+	HiddenColumns            string    `bun:"hidden_columns"`
+	StrengthLevelAuto        bool      `bun:"strengthlevel_auto"`
+	StrengthLevelBulk        bool      `bun:"strengthlevel_bulk"`
+	WithingsAutoAllowed      bool      `bun:"withings_auto_allowed"`
+	WithingsAuto             bool      `bun:"withings_auto"`
+	StrengthLevelPushAllowed bool      `bun:"strengthlevel_push_allowed"`
+	StrengthLevelPush        bool      `bun:"strengthlevel_push"`
+	DataVersion              int64     `bun:"data_version"`
+	PasskeyHandle            *string   `bun:"passkey_handle"`
+	JobPriority              int       `bun:"job_priority"`
 }
 
 func (r *userRow) toModel() models.User {
@@ -48,22 +52,26 @@ func (r *userRow) toModel() models.User {
 		tz = "UTC"
 	}
 	return models.User{
-		ID:                r.ID,
-		Username:          r.Username,
-		FirstName:         r.FirstName,
-		LastName:          r.LastName,
-		Role:              r.Role,
-		Email:             r.Email,
-		HeightCm:          r.HeightCm,
-		Timezone:          tz,
-		CreatedAt:         r.CreatedAt,
-		AthleteDefault:    r.AthleteDefault,
-		MethodRanking:     models.NormalizeRanking(keys),
-		HiddenColumns:     hidden,
-		StrengthLevelAuto: r.StrengthLevelAuto,
-		StrengthLevelBulk: r.StrengthLevelBulk,
-		DataVersion:       r.DataVersion,
-		JobPriority:       r.JobPriority,
+		ID:                       r.ID,
+		Username:                 r.Username,
+		FirstName:                r.FirstName,
+		LastName:                 r.LastName,
+		Role:                     r.Role,
+		Email:                    r.Email,
+		HeightCm:                 r.HeightCm,
+		Timezone:                 tz,
+		CreatedAt:                r.CreatedAt,
+		AthleteDefault:           r.AthleteDefault,
+		MethodRanking:            models.NormalizeRanking(keys),
+		HiddenColumns:            hidden,
+		StrengthLevelAuto:        r.StrengthLevelAuto,
+		StrengthLevelBulk:        r.StrengthLevelBulk,
+		WithingsAutoAllowed:      r.WithingsAutoAllowed,
+		WithingsAuto:             r.WithingsAuto,
+		StrengthLevelPushAllowed: r.StrengthLevelPushAllowed,
+		StrengthLevelPush:        r.StrengthLevelPush,
+		DataVersion:              r.DataVersion,
+		JobPriority:              r.JobPriority,
 	}
 }
 

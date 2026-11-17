@@ -534,3 +534,38 @@ func (s *Store) SetUserStrengthLevelBulk(ctx context.Context, userID int64, enab
 	}
 	return nil
 }
+
+// setUserAuto sets an administrator's permission column and the user's own switch column. Taking the
+// permission away clears the switch in the same statement; the switch only turns on when allowed.
+func (s *Store) setUserAuto(ctx context.Context, userID int64, allowedCol, onCol string, value, isAllowed bool) error {
+	q := s.db.NewUpdate().Model((*userRow)(nil)).Where("id = ?", userID)
+	if isAllowed {
+		q = q.Set(allowedCol+" = ?", value).Set(onCol+" = "+onCol+" AND ?", value)
+	} else {
+		q = q.Set(onCol+" = ?", value).Where(allowedCol+" = ?", true)
+	}
+	res, err := q.Exec(ctx)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) SetUserWithingsAutoAllowed(ctx context.Context, userID int64, allowed bool) error {
+	return s.setUserAuto(ctx, userID, "withings_auto_allowed", "withings_auto", allowed, true)
+}
+
+func (s *Store) SetUserWithingsAuto(ctx context.Context, userID int64, on bool) error {
+	return s.setUserAuto(ctx, userID, "withings_auto_allowed", "withings_auto", on, false)
+}
+
+func (s *Store) SetUserStrengthLevelPushAllowed(ctx context.Context, userID int64, allowed bool) error {
+	return s.setUserAuto(ctx, userID, "strengthlevel_push_allowed", "strengthlevel_push", allowed, true)
+}
+
+func (s *Store) SetUserStrengthLevelPush(ctx context.Context, userID int64, on bool) error {
+	return s.setUserAuto(ctx, userID, "strengthlevel_push_allowed", "strengthlevel_push", on, false)
+}
