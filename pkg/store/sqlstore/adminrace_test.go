@@ -4,8 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/store"
@@ -145,5 +149,80 @@ func TestAnIdentityOfAnotherUserIsNotOverwritten(t *testing.T) {
 	}
 	if got, _ := s.GetIdentity(ctx, "idp", "s1"); got.Secret != "newer" {
 		t.Fatalf("the owner's update was lost: %+v", got)
+	}
+}
+
+// A request that cannot get the lock before its time is up fails instead of going on without it. The
+// lock is held from another connection here, so this is PostgreSQL's.
+func TestChangesToTheAdministratorsWaitForTheLockAndGiveUpWhenTheirTimeIsUp(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	if s.driver != DriverPostgres {
+		t.Skip("PostgreSQL only")
+	}
+	a, _ := s.CreateUser(ctx, "admin-a")
+	b, _ := s.CreateUser(ctx, "admin-b")
+	if err := s.SetUserRole(ctx, b.ID, models.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := pgx.Connect(ctx, os.Getenv("DEXAFIX_TEST_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { holder.Close(ctx) })
+	if _, err := holder.Exec(ctx, "SELECT pg_advisory_lock($1)", adminLockKey); err != nil {
+		t.Fatal(err)
+	}
+	short := func() (context.Context, context.CancelFunc) { return context.WithTimeout(ctx, 300*time.Millisecond) }
+	for name, op := range map[string]func(context.Context) error{
+		"demoting an administrator": func(c context.Context) error { return s.SetUserRole(c, a.ID, models.RoleUser) },
+		"deleting a user":           func(c context.Context) error { return s.DeleteUser(c, a.ID) },
+		"the first sign-up":         func(c context.Context) error { _, err := s.CreateUser(c, "late-comer"); return err },
+	} {
+		c, cancel := short()
+		if err := op(c); err == nil {
+			t.Errorf("%s went on without the lock", name)
+		}
+		cancel()
+	}
+	if n := countAdmins(t, s); n != 2 {
+		t.Errorf("%d administrators after the refused changes", n)
+	}
+}
+
+// Rekey locks the tables against writers; when somebody holds them past its time it gives up.
+func TestRekeyGivesUpWhenTheTablesStayLocked(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	if s.driver != DriverPostgres {
+		t.Skip("PostgreSQL only")
+	}
+	withKeys(t, s, 1)
+	var schema string
+	if err := s.db.NewRaw("SELECT current_schema()").Scan(ctx, &schema); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := pgx.Connect(ctx, os.Getenv("DEXAFIX_TEST_POSTGRES_DSN"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { holder.Close(ctx) })
+	tx, err := holder.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { tx.Rollback(ctx) })
+	if _, err := tx.Exec(ctx, fmt.Sprintf("LOCK TABLE %s.users, %s.scale_readings, %s.dexa_scans IN ACCESS EXCLUSIVE MODE", schema, schema, schema)); err != nil {
+		t.Fatal(err)
+	}
+	short, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	if _, err := s.Rekey(short, false); err == nil {
+		t.Error("the main rekey went on although its tables were locked")
+	}
+	short2, cancel2 := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel2()
+	if _, err := s.BodyStore.Rekey(short2, false); err == nil {
+		t.Error("the body rekey went on although its tables were locked")
 	}
 }

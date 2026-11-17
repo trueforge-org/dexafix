@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -162,6 +163,67 @@ func TestAResetIsRefusedAsBusyWhenNoSlotIsFree(t *testing.T) {
 	fillSlots(t, g.b)
 	rep := g.doWithToken("POST", "/auth/password/reset", token, map[string]string{"Password": "a new long password", "Confirm": "a new long password"})
 	if rep.Code != http.StatusServiceUnavailable {
+		t.Fatalf("%d %s", rep.Code, rep.body())
+	}
+}
+
+// adsFails is a store whose read of the ads.txt setting fails when told to.
+type adsFails struct {
+	store.Store
+	fail atomic.Bool
+}
+
+func (a *adsFails) GetSetting(ctx context.Context, name string) (string, error) {
+	if name == settingAdsTxt && a.fail.Load() {
+		return "", errors.New("the store lost the ads.txt")
+	}
+	return a.Store.GetSetting(ctx, name)
+}
+func (a *adsFails) Unwrap() store.Store { return a.Store }
+
+func TestTheAdsTxtSettingFailsAndIsIgnoredWhenItNoLongerValidates(t *testing.T) {
+	base := newRig(t)
+	uid, session := base.signUp("root")
+	_ = uid
+	wrapper := &adsFails{Store: base.st}
+	g := newRigOn(t, wrapper, base.st)
+	ctx := context.Background()
+
+	if err := g.st.PutSetting(ctx, settingAdsTxt, strings.Repeat("a", 200_000)); err != nil { // too long to be valid now
+		t.Fatal(err)
+	}
+	if got, err := g.b.adsTxtSetting(ctx); err != nil || got != "" {
+		t.Fatalf("an invalid stored value: %q %v", got, err)
+	}
+	wrapper.fail.Store(true)
+	if _, err := g.b.adsTxtSetting(ctx); err == nil {
+		t.Fatal("a store that fails was read")
+	}
+	if err := g.b.reloadSettings(ctx); err == nil {
+		t.Fatal("the settings were reloaded without the ads.txt")
+	}
+
+	t.Run("saving: the body is not JSON", func(t *testing.T) {
+		wrapper.fail.Store(false)
+		if rep := g.do("POST", "/admin/ads-txt", "{not json", session); rep.Code != http.StatusBadRequest {
+			t.Fatalf("%d %s", rep.Code, rep.body())
+		}
+	})
+	t.Run("saving: the store refuses the write", func(t *testing.T) {
+		rejectWritesOn(t, g.st, "app_settings", "INSERT", "UPDATE", "DELETE")
+		if rep := g.do("POST", "/admin/ads-txt", map[string]string{"text": "google.com, pub-1234567890123456, DIRECT"}, session); rep.Code != http.StatusInternalServerError {
+			t.Fatalf("%d %s", rep.Code, rep.body())
+		}
+	})
+}
+
+func TestSavingTheAdsTxtFailsWhenTheSettingsCannotBeReloaded(t *testing.T) {
+	base := newRig(t)
+	_, session := base.signUp("root")
+	wrapper := &adsFails{Store: base.st}
+	g := newRigOn(t, wrapper, base.st)
+	wrapper.fail.Store(true)
+	if rep := g.do("POST", "/admin/ads-txt", map[string]string{"text": "google.com, pub-1234567890123456, DIRECT"}, session); rep.Code != http.StatusInternalServerError {
 		t.Fatalf("%d %s", rep.Code, rep.body())
 	}
 }

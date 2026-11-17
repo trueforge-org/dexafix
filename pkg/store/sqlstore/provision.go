@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -77,18 +78,16 @@ func Provision(ctx context.Context, o ProvisionOptions) error {
 	}
 	admin := openPool(cfg)
 	defer admin.Close()
-	if err := admin.PingContext(ctx); err != nil {
-		return fmt.Errorf("provision: connect as the administrator: %w", err)
-	}
 
-	// One run at a time: the lock belongs to a connection of its own and ends with it.
+	// One run at a time: the lock belongs to a connection of its own and ends with it. Taking it is also
+	// the first use of the connection, so it says whether the administrator can connect at all.
 	lock, err := admin.Conn(ctx)
 	if err != nil {
 		return fmt.Errorf("provision: connect as the administrator: %w", err)
 	}
 	defer lock.Close()
 	if _, err := lock.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, provisionRunLockKey); err != nil {
-		return fmt.Errorf("provision: wait for another run: %w", err)
+		return fmt.Errorf("provision: connect as the administrator, or wait for another run: %w", err)
 	}
 
 	if err := ensureRole(ctx, admin, ProvisionOwnerRole, ""); err != nil {
@@ -114,20 +113,6 @@ func Provision(ctx context.Context, o ProvisionOptions) error {
 			return fmt.Errorf("provision: create the database: %w", err)
 		}
 	}
-	// The owner is set on every run: a database made by an earlier version belonged to the api's role,
-	// which could then lock the other role out, change the database's settings or drop it.
-	for _, stmt := range []string{
-		fmt.Sprintf(`ALTER DATABASE %s OWNER TO %s`, database, owner),
-		// Connecting is a right of PUBLIC by default, so any role could connect, and the api's role as
-		// owner could take it away from the others. It is granted to the two roles only.
-		fmt.Sprintf(`REVOKE ALL ON DATABASE %s FROM PUBLIC`, database),
-		fmt.Sprintf(`GRANT CONNECT, TEMPORARY ON DATABASE %s TO %s, %s`, database, quoteIdent(ProvisionAppRole), quoteIdent(ProvisionBodyRole)),
-	} {
-		if _, err := admin.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("provision: %s: %w", stmt, err)
-		}
-	}
-
 	dbCfg := cfg.Copy()
 	dbCfg.Database = ProvisionDatabase
 	db := openPool(dbCfg)
@@ -137,7 +122,16 @@ func Provision(ctx context.Context, o ProvisionOptions) error {
 		return fmt.Errorf("provision: connect to the database: %w", err)
 	}
 	defer tx.Rollback()
-	for _, stmt := range []string{
+	if err := execAll(ctx, tx, []string{
+		// What belongs to the database as a whole. They run here, in the transaction on the database
+		// itself (any connection to it may), so one step and one failure path cover them all.
+		// The owner is set on every run: a database made by an earlier version belonged to the api's role,
+		// which could then lock the other role out, change the database's settings or drop it.
+		fmt.Sprintf(`ALTER DATABASE %s OWNER TO %s`, database, owner),
+		// Connecting is a right of PUBLIC by default, so any role could connect, and the api's role as
+		// owner could take it away from the others. It is granted to the two roles only.
+		fmt.Sprintf(`REVOKE ALL ON DATABASE %s FROM PUBLIC`, database),
+		fmt.Sprintf(`GRANT CONNECT, TEMPORARY ON DATABASE %s TO %s, %s`, database, quoteIdent(ProvisionAppRole), quoteIdent(ProvisionBodyRole)),
 		fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s AUTHORIZATION %s`, quoteIdent(ProvisionBodySchema), quoteIdent(ProvisionBodyRole)),
 		fmt.Sprintf(`ALTER SCHEMA %s OWNER TO %s`, quoteIdent(ProvisionBodySchema), quoteIdent(ProvisionBodyRole)),
 		fmt.Sprintf(`ALTER ROLE %s SET search_path = %s`, quoteIdent(ProvisionBodyRole), quoteIdent(ProvisionBodySchema)),
@@ -147,12 +141,25 @@ func Provision(ctx context.Context, o ProvisionOptions) error {
 		`REVOKE ALL ON SCHEMA public FROM PUBLIC`,
 		fmt.Sprintf(`GRANT ALL ON SCHEMA public TO %s`, quoteIdent(ProvisionAppRole)),
 		fmt.Sprintf(`REVOKE ALL ON SCHEMA %s FROM PUBLIC`, quoteIdent(ProvisionBodySchema)),
-	} {
-		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+	}); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// stmtRunner is what runs a statement: a pool or a transaction.
+type stmtRunner interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// execAll runs the statements one after the other and stops at the first the server refuses.
+func execAll(ctx context.Context, db stmtRunner, stmts []string) error {
+	for _, stmt := range stmts {
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("provision: %s: %w", stmt, err)
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // roleAttributes are set on every role Provision handles, whatever an earlier version or an image
@@ -173,24 +180,16 @@ func ensureRole(ctx context.Context, db *sql.DB, role, password string) error {
 	if exists {
 		verb = "ALTER"
 	}
-	login := "NOLOGIN"
+	login, verifier := "NOLOGIN", ""
 	if password != "" {
-		login = "LOGIN"
+		login, verifier = "LOGIN", scramVerifier(password)
 	}
+	// One statement for both kinds of role: with a verifier it has a PASSWORD clause, without one it has
+	// none (format ignores an argument no placeholder takes).
 	var stmt string
-	if password == "" {
-		if err := db.QueryRowContext(ctx, `SELECT format($1::text || ' ROLE %I '||$2::text||' '||$3::text, $4::text)`, verb, login, roleAttributes, role).Scan(&stmt); err != nil {
-			return fmt.Errorf("provision: prepare role %s: %w", role, err)
-		}
-	} else {
-		verifier, err := scramVerifier(password)
-		if err != nil {
-			return err
-		}
-		if err := db.QueryRowContext(ctx, `SELECT format($1::text || ' ROLE %I '||$2::text||' '||$3::text||' PASSWORD %L', $4::text, $5::text)`,
-			verb, login, roleAttributes, role, verifier).Scan(&stmt); err != nil {
-			return fmt.Errorf("provision: prepare role %s: %w", role, err)
-		}
+	if err := db.QueryRowContext(ctx, `SELECT format($1::text || ' ROLE %I ' || $2::text || ' ' || $3::text || CASE WHEN $5::text = '' THEN '' ELSE ' PASSWORD %L' END, $4::text, $5::text)`,
+		verb, login, roleAttributes, role, verifier).Scan(&stmt); err != nil {
+		return fmt.Errorf("provision: prepare role %s: %w", role, err)
 	}
 	if _, err := db.ExecContext(ctx, stmt); err != nil {
 		// The statement can hold the password, so it is not part of the message (the server's error is not).
@@ -200,36 +199,13 @@ func ensureRole(ctx context.Context, db *sql.DB, role, password string) error {
 }
 
 // dropMemberships takes the role out of every role it is a member of (pg_read_all_data, a
-// superuser's role): a role that Provision handles is only what it is here.
+// superuser's role): a role that Provision handles is only what it is here. One block, run by the
+// server, so no list of names travels back and forth.
 func dropMemberships(ctx context.Context, db *sql.DB, role string) error {
-	rows, err := db.QueryContext(ctx, `SELECT g.rolname FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid JOIN pg_roles u ON u.oid = m.member WHERE u.rolname = $1`, role)
-	if err != nil {
-		return fmt.Errorf("provision: look for the memberships of role %s: %w", role, err)
-	}
-	var groups []string
-	for rows.Next() {
-		var g string
-		if err := rows.Scan(&g); err != nil {
-			rows.Close()
-			return fmt.Errorf("provision: look for the memberships of role %s: %w", role, err)
-		}
-		groups = append(groups, g)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("provision: look for the memberships of role %s: %w", role, err)
-	}
-	rows.Close()
-	for _, g := range groups {
-		var stmt string
-		if err := db.QueryRowContext(ctx, `SELECT format('REVOKE %I FROM %I', $1::text, $2::text)`, g, role).Scan(&stmt); err != nil {
-			return fmt.Errorf("provision: prepare the removal of role %s from %s: %w", role, g, err)
-		}
-		if _, err := db.ExecContext(ctx, stmt); err != nil {
-			return fmt.Errorf("provision: remove role %s from %s: %w", role, g, err)
-		}
-	}
-	return nil
+	name := "'" + strings.ReplaceAll(role, "'", "''") + "'" // a constant of this file, quoted all the same
+	return execAll(ctx, db, []string{`DO $provision$ DECLARE g name; BEGIN
+ FOR g IN SELECT r.rolname FROM pg_auth_members m JOIN pg_roles r ON r.oid = m.roleid JOIN pg_roles u ON u.oid = m.member WHERE u.rolname = ` + name + `
+ LOOP EXECUTE format('REVOKE %I FROM %I', g, ` + name + `); END LOOP; END $provision$`})
 }
 
 // scramIterations is PostgreSQL's default work factor for SCRAM-SHA-256 (scram_iterations).
@@ -239,10 +215,10 @@ const scramIterations = 4096
 // it is, so the password itself is never in a statement. A password with characters beyond ASCII
 // is sent as it is instead and the server does the normalisation (SASLprep) that the verifier
 // would need.
-func scramVerifier(password string) (string, error) {
+func scramVerifier(password string) string {
 	for _, r := range password {
 		if r < 0x20 || r > 0x7e {
-			return password, nil
+			return password
 		}
 	}
 	salt := make([]byte, 16)
@@ -256,7 +232,7 @@ func scramVerifier(password string) (string, error) {
 	}
 	stored := sha256.Sum256(mac(salted, "Client Key"))
 	enc := base64.StdEncoding.EncodeToString
-	return fmt.Sprintf("SCRAM-SHA-256$%d:%s$%s:%s", scramIterations, enc(salt), enc(stored[:]), enc(mac(salted, "Server Key"))), nil
+	return fmt.Sprintf("SCRAM-SHA-256$%d:%s$%s:%s", scramIterations, enc(salt), enc(stored[:]), enc(mac(salted, "Server Key")))
 }
 
 // openPG opens a connection pool from a PostgreSQL connection string (URL or key/value form),

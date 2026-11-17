@@ -153,6 +153,42 @@ func TestProvisionReportsWhatTheServerRefuses(t *testing.T) {
 		}
 	})
 
+	t.Run("the lock of a run cannot be taken", func(t *testing.T) {
+		o := provisionOptions(shadowDSN(t, dsn, `CREATE FUNCTION SCHEMA.pg_advisory_lock(bigint) RETURNS void LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'no lock today'; END $$`))
+		if err := Provision(ctx, o); err == nil || !strings.Contains(err.Error(), "no lock today") {
+			t.Fatalf("got %v", err)
+		}
+	})
+
+	t.Run("a membership cannot be taken away", func(t *testing.T) {
+		admin, err := openPG(dsn, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer admin.Close()
+		cleanup := func() {
+			if a, err := openPG(dsn, nil); err == nil {
+				a.ExecContext(ctx, `REVOKE pg_read_all_data FROM dexafix_body`)
+				a.Close()
+			}
+		}
+		t.Cleanup(cleanup)
+		if _, err := admin.ExecContext(ctx, `GRANT pg_read_all_data TO dexafix_body`); err != nil {
+			t.Fatal(err)
+		}
+		// format() is found in the made-up schema first: it refuses the statement that takes the role out
+		// of the group and passes everything else on.
+		o := provisionOptions(shadowDSN(t, dsn, `CREATE FUNCTION SCHEMA.format(text, text, text) RETURNS text LANGUAGE plpgsql AS $$
+BEGIN IF $1 LIKE 'REVOKE%' THEN RAISE EXCEPTION 'revoke refused by the test'; END IF; RETURN pg_catalog.format($1, $2, $3); END $$`))
+		if err := Provision(ctx, o); err == nil || !strings.Contains(err.Error(), "revoke refused by the test") {
+			t.Fatalf("got %v", err)
+		}
+		cleanup()
+		if err := Provision(ctx, provisionOptions(dsn)); err != nil {
+			t.Fatalf("after it: %v", err)
+		}
+	})
+
 	// The failures above must leave a Provision that works.
 	if err := Provision(ctx, provisionOptions(dsn)); err != nil {
 		t.Fatalf("after the failures: %v", err)

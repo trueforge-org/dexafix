@@ -271,3 +271,30 @@ func TestAnEmptyTimeZoneColumnReadsAsUTC(t *testing.T) {
 }
 
 func storeFilter() store.ListFilter { return store.ListFilter{Limit: 10} }
+
+// A row without any data is left as it is by a rekey (there is nothing to seal).
+func TestRekeyLeavesAnEmptyBodyValueAlone(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newFaultyStore(t, nil)
+	seedFaultData(t, s)
+	if err := s.ExecForTests(ctx, `UPDATE scale_readings SET data = ''`); err != nil {
+		t.Fatal(err)
+	}
+	withKeys(t, s, 1)
+	if _, err := s.BodyStore.Rekey(ctx, false); err != nil {
+		t.Fatal(err)
+	}
+	if v := rawColumn(t, s, `SELECT data FROM scale_readings LIMIT 1`); v != "" {
+		t.Fatalf("an empty value became %q", v)
+	}
+}
+
+// The source of a copy that fails to start its read transaction is reported, whichever statement it was.
+func TestCopyReportsAFailureOfTheSource(t *testing.T) {
+	failEveryStatement(t, nil,
+		func(t *testing.T, s *Store) *Store { return newStore(t) },
+		func(ctx context.Context, src *Store, dst *Store) error {
+			_, err := Copy(ctx, src, dst)
+			return err
+		}, 1) // the first statement is the library asking whether its version table exists: a failure is "no"
+}

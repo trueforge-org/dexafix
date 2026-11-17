@@ -1,6 +1,7 @@
 package sqlstore
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 )
 
 // provisionDSN is the administrator's connection string; the tests need a real PostgreSQL server, and
@@ -299,10 +302,7 @@ func TestProvisionSendsAVerifierAndTheRolesSignInWithThePassword(t *testing.T) {
 }
 
 func TestAScramVerifierHasPostgresFormat(t *testing.T) {
-	v, err := scramVerifier("a long enough password")
-	if err != nil {
-		t.Fatal(err)
-	}
+	v := scramVerifier("a long enough password")
 	parts := strings.Split(v, "$")
 	if len(parts) != 3 || parts[0] != "SCRAM-SHA-256" || !strings.HasPrefix(parts[1], "4096:") || strings.Count(parts[2], ":") != 1 {
 		t.Fatalf("verifier %q", v)
@@ -310,12 +310,12 @@ func TestAScramVerifierHasPostgresFormat(t *testing.T) {
 	if strings.Contains(v, "a long enough password") {
 		t.Error("the password is in the verifier")
 	}
-	w, _ := scramVerifier("a long enough password")
+	w := scramVerifier("a long enough password")
 	if v == w {
 		t.Error("two verifiers of one password are equal: the salt is not random")
 	}
-	if raw, err := scramVerifier("pässword with ü"); err != nil || raw != "pässword with ü" {
-		t.Errorf("a password beyond ASCII goes as it is: %q %v", raw, err)
+	if raw := scramVerifier("pässword with ü"); raw != "pässword with ü" {
+		t.Errorf("a password beyond ASCII goes as it is: %q", raw)
 	}
 }
 
@@ -332,5 +332,17 @@ func TestTwoProvisionRunsAtOnceBothSucceed(t *testing.T) {
 		if err := <-errs; err != nil {
 			t.Errorf("run %d: %v", i, err)
 		}
+	}
+}
+
+// A short password is accepted (a deployment set up with one must keep starting), with a warning.
+func TestAShortRolePasswordIsAcceptedWithAWarning(t *testing.T) {
+	var logs bytes.Buffer
+	old := log.Logger
+	log.Logger = zerolog.New(&logs)
+	t.Cleanup(func() { log.Logger = old })
+	err := Provision(context.Background(), ProvisionOptions{AdminDSN: "postgres://:not a url\x7f", AppPassword: "short-one", BodyPassword: "short-two"})
+	if err == nil || !strings.Contains(logs.String(), "shorter than recommended") {
+		t.Fatalf("error %v, log %s", err, logs.String())
 	}
 }
