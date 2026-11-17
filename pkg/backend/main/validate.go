@@ -41,6 +41,17 @@ func checkRanges(notes string, rs ...valueRange) error {
 	return nil
 }
 
+// earliestMeasurement and measurementAhead bound when a reading or a scan may have been taken: a
+// date in year 1 or 9999 makes the estimates allocate a series of every day in between.
+var earliestMeasurement = time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)
+
+const measurementAhead = 24 * time.Hour
+
+// plausibleMeasurementTime reports whether t is from 1900 until a day from now.
+func plausibleMeasurementTime(t, now time.Time) bool {
+	return !t.Before(earliestMeasurement) && !t.After(now.Add(measurementAhead))
+}
+
 // sourceName is what the public API accepts as the source of a reading.
 var sourceName = regexp.MustCompile(`^[a-z0-9_-]{1,32}$`)
 

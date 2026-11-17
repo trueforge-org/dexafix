@@ -170,12 +170,20 @@ func leaseWithingsImport(ctx context.Context, s *Backend, j models.Job) (any, er
 // hands over the new pair before using it. A job that only refreshes (an import) must not bring
 // back a connection the user removed meanwhile.
 func (s *Backend) storeWithingsTokens(ctx context.Context, j models.Job, data json.RawMessage, connecting bool) error {
+	// Only the fields the worker's token format knows are kept: the worker cannot store anything else
+	// in the user's connection.
 	var t struct {
-		AccessToken  string `json:"access_token"`
-		RefreshToken string `json:"refresh_token"`
+		AccessToken  string    `json:"access_token"`
+		RefreshToken string    `json:"refresh_token"`
+		ExpiresAt    time.Time `json:"expires_at"`
+		UserID       string    `json:"withings_userid,omitempty"`
 	}
 	if err := json.Unmarshal(data, &t); err != nil || t.AccessToken == "" || t.RefreshToken == "" {
 		return errBadResult
+	}
+	data, err := json.Marshal(t) // cannot fail: strings and a time
+	if err != nil {
+		return err
 	}
 	if !connecting {
 		if _, err := s.store.GetIntegration(ctx, j.UserID, providerWithings); errors.Is(err, store.ErrNotFound) {
@@ -203,13 +211,6 @@ func applyWithingsImport(ctx context.Context, s *Backend, j models.Job, result j
 	if err := json.Unmarshal(result, &res); err != nil || len(res.Readings) > maxImportReadings {
 		return "", errBadResult
 	}
-	for i := range res.Readings {
-		r := &res.Readings[i]
-		if r.Source != providerWithings || r.ExternalID == nil || *r.ExternalID == "" || r.MeasuredAt.IsZero() {
-			return "", errBadResult
-		}
-		r.ID, r.UserID = 0, j.UserID // a worker never chooses whose readings these are
-	}
 	var in importPayload
 	if j.Payload != "" {
 		if err := json.Unmarshal([]byte(j.Payload), &in); err != nil {
@@ -223,10 +224,28 @@ func applyWithingsImport(ctx context.Context, s *Backend, j models.Job, result j
 	if err != nil {
 		return "", err
 	}
+	// A result may only hold what the job asked for: readings since the job's start, or of its day
+	// (a day later or earlier is let in for the time zone), and never a time that cannot be real. A
+	// worker cannot overwrite the readings of any other day.
+	now := time.Now()
+	from, to := earliestMeasurement, now.Add(measurementAhead)
+	if !in.Since.IsZero() {
+		from = in.Since.Add(-24 * time.Hour)
+	}
 	if in.Day != "" {
-		if _, err = time.Parse(dateLayout, in.Day); err != nil {
+		day, err := time.ParseInLocation(dateLayout, in.Day, userLocation(u.Timezone))
+		if err != nil {
 			return "", errBadResult
 		}
+		from, to = day.Add(-24*time.Hour), day.Add(48*time.Hour)
+	}
+	for i := range res.Readings {
+		r := &res.Readings[i]
+		if r.Source != providerWithings || r.ExternalID == nil || *r.ExternalID == "" || r.MeasuredAt.IsZero() ||
+			r.MeasuredAt.Before(from) || r.MeasuredAt.After(to) || !plausibleMeasurementTime(r.MeasuredAt, now) {
+			return "", errBadResult
+		}
+		r.ID, r.UserID = 0, j.UserID // a worker never chooses whose readings these are
 	}
 	out, err := s.body.Reconcile(ctx, u, bodyapi.ReconcileRequest{
 		Source: providerWithings, Fetched: res.Readings, Seen: res.Seen, DayMode: in.Day != "", Day: in.Day,
@@ -236,4 +255,12 @@ func applyWithingsImport(ctx context.Context, s *Backend, j models.Job, result j
 	}
 	b, err := json.Marshal(out)
 	return string(b), err
+}
+
+// userLocation is the user's time zone, or UTC when it is empty or unknown.
+func userLocation(zone string) *time.Location {
+	if loc, err := time.LoadLocation(zone); err == nil {
+		return loc
+	}
+	return time.UTC
 }

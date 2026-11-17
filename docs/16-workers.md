@@ -52,6 +52,11 @@ answer as for a kind that does not exist. The api process records an audit entry
 ("Job handed to a worker") each time it hands a worker a job, which carries the
 user's credentials, with the kind and the worker's name.
 
+The api process does not trust what a worker returns. A Withings import result
+may hold readings from the job's window only (since its start, or of its day in
+your time zone, give or take a day) and none from before 1900 or after tomorrow;
+the connection keeps the token fields only. Anything else fails the job.
+
 **Upgrading from a single worker secret:** `--worker-secret-file` of `serve api`
 now takes `PROVIDERS=FILE` entries, and `DEXAFIX_WORKER_SECRET_FILE` of the api
 process is replaced by `DEXAFIX_WORKER_SECRET_FILES` (entries separated by `;`).
