@@ -118,10 +118,20 @@ func TestAdminSavesAnalyticsAndPublicPagesOfferTheChoice(t *testing.T) {
 	for _, p := range public {
 		resp := mustGetResp(t, anon, ts.URL+p)
 		page := bodyOf(t, resp)
-		for _, want := range []string{
+		// The sign-in page asks for passwords: it offers no ads (they widen the script policy to inline
+		// scripts), so it has the two other services only.
+		signIn := p == "/"
+		wants := []string{
 			`id="consent"`, `data-scarf="` + testScarf + `"`, `data-ga="` + testGA + `"`, `data-adsense="` + testAds + `"`,
 			"consent.js", "data-consent-open", `data-accept`, `data-decline`, `href="/privacy#analytics"`, "Scarf, Google Analytics and Google AdSense",
-		} {
+		}
+		if signIn {
+			wants = []string{`id="consent"`, `data-scarf="` + testScarf + `"`, `data-ga="` + testGA + `"`, "consent.js", "data-consent-open", `data-accept`, `data-decline`, `href="/privacy#analytics"`, "Scarf and Google Analytics"}
+			if strings.Contains(page, `data-adsense="`+testAds+`"`) {
+				t.Errorf("the sign-in page offers ads")
+			}
+		}
+		for _, want := range wants {
 			if !strings.Contains(page, want) {
 				t.Errorf("%s lacks %q", p, want)
 			}
@@ -133,6 +143,12 @@ func TestAdminSavesAnalyticsAndPublicPagesOfferTheChoice(t *testing.T) {
 		}
 		csp := resp.Header.Get("Content-Security-Policy")
 		for _, want := range []string{"https://static.scarf.sh", "https://www.googletagmanager.com", "https://pagead2.googlesyndication.com", "frame-ancestors 'none'", "form-action 'self'"} {
+			if signIn && strings.Contains(want, "googlesyndication") {
+				if strings.Contains(csp, want) {
+					t.Errorf("%s: policy names the ad network: %s", p, csp)
+				}
+				continue
+			}
 			if !strings.Contains(csp, want) {
 				t.Errorf("%s: policy lacks %q: %s", p, want, csp)
 			}
