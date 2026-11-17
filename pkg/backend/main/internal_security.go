@@ -213,9 +213,18 @@ func (s *Backend) internalTokenDelete(w http.ResponseWriter, r *http.Request, u 
 }
 
 func (s *Backend) internalIdentityUnlink(w http.ResponseWriter, r *http.Request, u models.User) {
+	var in struct{ Current string }
+	if !internalDecode(w, r, &in) {
+		return
+	}
 	ctx := r.Context()
 	provider := r.PathValue("provider")
 	answer := func(msg string) { internalJSON(w, http.StatusOK, map[string]string{"message": msg}) }
+	// Removing the password with a stolen session would let the session stand in for it afterwards
+	// (checkReauth), so unlinking asks for the password, like removing a passkey.
+	if !s.internalConfirmPassword(w, r, u, in.Current) {
+		return
+	}
 	if provider == models.ProviderPasskey {
 		answer("Remove passkeys in the Passkeys section.")
 		return

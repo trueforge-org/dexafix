@@ -60,13 +60,13 @@ func (c *Client) DeleteToken(ctx context.Context, userID, id int64) error {
 	return c.Delete(ctx, userPath(userID, "/tokens/"+strconv.FormatInt(id, 10)))
 }
 
-// UnlinkIdentity unlinks a sign-in provider. The answer is the message to show, whether the
-// account was unlinked or not.
-func (c *Client) UnlinkIdentity(ctx context.Context, userID int64, provider string) (string, error) {
+// UnlinkIdentity unlinks a sign-in provider. It needs the current password (none for an account
+// without one). The answer is the message to show, whether the account was unlinked or not.
+func (c *Client) UnlinkIdentity(ctx context.Context, userID int64, provider, current string) (string, error) {
 	var out struct {
 		Message string `json:"message"`
 	}
-	_, err := c.Do(ctx, http.MethodDelete, userPath(userID, "/identities/"+url.PathEscape(provider)), nil, &out)
+	_, err := c.Do(ctx, http.MethodDelete, userPath(userID, "/identities/"+url.PathEscape(provider)), map[string]string{"current": current}, &out)
 	return out.Message, err
 }
 

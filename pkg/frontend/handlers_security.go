@@ -80,9 +80,9 @@ func (s *Frontend) deleteToken(w http.ResponseWriter, r *http.Request, u models.
 }
 
 func (s *Frontend) unlinkIdentity(w http.ResponseWriter, r *http.Request, u models.User) {
-	msg, err := s.api.UnlinkIdentity(r.Context(), u.ID, r.PathValue("provider"))
+	msg, err := s.api.UnlinkIdentity(r.Context(), u.ID, r.PathValue("provider"), r.PostFormValue("current"))
 	if err != nil {
-		s.fail(w, err)
+		s.settingsError(w, r, u, err)
 		return
 	}
 	settingsRedirect(w, r, u.ID, msg)

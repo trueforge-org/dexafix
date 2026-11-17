@@ -147,7 +147,7 @@
 <section class="card" id="linked">
   <h2>Linked accounts {{help "linked-accounts"}}</h2>
   <ul class="link-list">{{range .Linked}}<li><span>{{.Label}}</span>
-    {{if .Linked}}<form method="post" action="/u/{{$.User.ID}}/identities/{{.Slug}}/delete"><button class="danger" type="submit">Unlink</button></form>
+    {{if .Linked}}<form method="post" action="/u/{{$.User.ID}}/identities/{{.Slug}}/delete">{{if $.Security.ConfirmPassword}}<input type="password" name="current" required placeholder="Current password" aria-label="Current password" autocomplete="current-password"> {{end}}<button class="danger" type="submit">Unlink</button></form>
     {{else}}<form method="post" action="/auth/{{.Slug}}/login">{{if $.Security.ConfirmPassword}}<input type="password" name="current" required placeholder="Current password" aria-label="Current password" autocomplete="current-password"> {{end}}<button class="secondary" type="submit">Link</button></form>{{end}}</li>{{end}}</ul>
 </section>
 {{end}}

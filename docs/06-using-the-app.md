@@ -30,7 +30,7 @@ you have not set one) in the header, which also has **Sign out**.
     and time of a reading are read and shown, what "today" is and which day a
     Withings import covers. DEXA scans are plain dates and are not moved.
   - **Access tokens**: create and revoke personal access tokens for the API.
-  - **Linked accounts**: link or unlink sign-in providers.
+  - **Linked accounts**: link or unlink sign-in providers (unlinking asks for your current password, or a recent sign-in when you have none).
   - **Two-step verification**: turn it on or off, and replace your recovery codes.
     See [Two-step verification](07-accounts-and-sign-in.md#two-step-verification).
   - **Passkeys**: add a passkey, rename it or remove it. See

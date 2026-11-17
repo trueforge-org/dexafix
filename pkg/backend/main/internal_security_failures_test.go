@@ -210,8 +210,24 @@ func TestUnlinkingALoginWorksAndFailsCleanly(t *testing.T) {
 		return g, uid, session
 	}
 	unlink := func(g *rig, uid int64, session *http.Cookie) reply {
-		return g.do("DELETE", userPathOf(uid, "identities/idp"), nil, session)
+		return g.do("DELETE", userPathOf(uid, "identities/idp"), map[string]string{"Current": testPassword}, session)
 	}
+	t.Run("the password is asked first, and without it the login stays", func(t *testing.T) {
+		g, uid, session := setup(t)
+		for name, body := range map[string]any{"missing": map[string]string{}, "wrong": map[string]string{"Current": "not the password"}} {
+			rep := g.do("DELETE", userPathOf(uid, "identities/idp"), body, session)
+			if rep.Code < 400 || strings.Contains(rep.body(), "Account unlinked.") {
+				t.Fatalf("%s password: %d %s", name, rep.Code, rep.body())
+			}
+			if _, err := g.st.GetIdentity(context.Background(), "idp", "s1"); err != nil {
+				t.Fatalf("%s password: the login was unlinked", name)
+			}
+		}
+	})
+	t.Run("a body that is not JSON is refused", func(t *testing.T) {
+		g, uid, session := setup(t)
+		wantStatus(t, g.do("DELETE", userPathOf(uid, "identities/idp"), nil, session), http.StatusBadRequest, "invalid")
+	})
 	t.Run("a linked login is removed and audited", func(t *testing.T) {
 		g, uid, session := setup(t)
 		rep := unlink(g, uid, session)
@@ -224,7 +240,7 @@ func TestUnlinkingALoginWorksAndFailsCleanly(t *testing.T) {
 	})
 	t.Run("a passkey is removed in its own section", func(t *testing.T) {
 		g, uid, session := setup(t)
-		rep := g.do("DELETE", userPathOf(uid, "identities/"+models.ProviderPasskey), nil, session)
+		rep := g.do("DELETE", userPathOf(uid, "identities/"+models.ProviderPasskey), map[string]string{"Current": testPassword}, session)
 		if !strings.Contains(rep.body(), "Passkeys section") {
 			t.Fatal(rep.body())
 		}

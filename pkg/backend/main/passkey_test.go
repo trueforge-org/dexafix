@@ -698,7 +698,7 @@ func TestPasskeyManage(t *testing.T) {
 	})
 
 	t.Run("the passkey sign-in cannot be unlinked as a provider", func(t *testing.T) {
-		resp, _ := site.postForm(t, fmt.Sprintf("/u/%d/identities/%s/delete", aliceID, "passkey"), url.Values{}, aliceSess)
+		resp, _ := site.postForm(t, fmt.Sprintf("/u/%d/identities/%s/delete", aliceID, "passkey"), url.Values{"current": {testPassword}}, aliceSess)
 		loc, _ := url.Parse(resp.Header.Get("Location"))
 		if resp.StatusCode != 303 || loc == nil || loc.Query().Get("msg") != "Remove passkeys in the Passkeys section." {
 			t.Fatalf("unlink passkey: %d %s", resp.StatusCode, resp.Header.Get("Location"))
