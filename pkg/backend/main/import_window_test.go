@@ -60,3 +60,61 @@ func TestImportQueuesTheWindowTheRequestAsksFor(t *testing.T) {
 		})
 	}
 }
+
+// The daily run goes to the connected users an administrator allowed and who switched it on, and it
+// asks for the last two days only.
+func TestDailyWithingsImportIsScheduledOnlyForUsersWhoOptedIn(t *testing.T) {
+	r := newJobRig(t)
+	ctx := context.Background()
+	r.connectWithings()
+	if err := r.st.PutIntegration(ctx, 1, "withings", []byte(`{}`)); err != nil { // the administrator, too
+		t.Fatal(err)
+	}
+	run := func() []models.Job {
+		r.b.runScheduler(ctx)
+		jobs, err := r.st.ListJobs(ctx, models.JobFilter{Kinds: []string{kindWithingsImport}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return jobs
+	}
+	if jobs := run(); len(jobs) != 0 {
+		t.Fatalf("%d jobs before anybody opted in", len(jobs))
+	}
+	// Allowed, but not switched on.
+	if err := r.st.SetUserWithingsAutoAllowed(ctx, 2, true); err != nil {
+		t.Fatal(err)
+	}
+	if jobs := run(); len(jobs) != 0 {
+		t.Fatalf("%d jobs for a user who has not switched it on", len(jobs))
+	}
+	// Switched on for alice; the administrator never allowed it for themselves.
+	if err := r.st.SetUserWithingsAuto(ctx, 2, true); err != nil {
+		t.Fatal(err)
+	}
+	jobs := run()
+	if len(jobs) != 1 || jobs[0].UserID != 2 || jobs[0].Origin != models.JobOriginSchedule {
+		t.Fatalf("jobs %+v", jobs)
+	}
+	job, err := r.st.GetJob(ctx, jobs[0].PublicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p importPayload
+	if err := json.Unmarshal([]byte(job.Payload), &p); err != nil {
+		t.Fatal(err)
+	}
+	if age := time.Since(p.Since); age < 47*time.Hour || age > 50*time.Hour {
+		t.Fatalf("the run looks %v back, want about two days", age)
+	}
+	// Taking the permission away stops it.
+	if err := r.st.SetUserWithingsAutoAllowed(ctx, 2, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.st.PutJobSchedule(ctx, models.JobSchedule{UserID: 2, Kind: kindWithingsImport}); err != nil { // due again
+		t.Fatal(err)
+	}
+	if got := run(); len(got) != 1 {
+		t.Fatalf("a forbidden user was scheduled again: %d jobs", len(got))
+	}
+}

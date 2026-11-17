@@ -99,9 +99,18 @@ func TestWithingsJobsAreRefusedForThingsOnlyTheServerCanFix(t *testing.T) {
 			t.Fatal("no error")
 		}
 	})
-	t.Run("connected users are scheduled with a window of recent days", func(t *testing.T) {
+	t.Run("connected users who opted in are scheduled with a window of recent days", func(t *testing.T) {
 		f := newScriptedFixture(t)
 		f.connectWithings(t, f.user.ID)
+		if targets, err := f.b.kinds[kindWithingsImport].ScheduleFor(ctx, f.b); err != nil || len(targets) != 0 {
+			t.Fatalf("a user who did not opt in: targets %+v, err %v", targets, err)
+		}
+		if err := f.st.SetUserWithingsAutoAllowed(ctx, f.user.ID, true); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.st.SetUserWithingsAuto(ctx, f.user.ID, true); err != nil {
+			t.Fatal(err)
+		}
 		targets, err := f.b.kinds[kindWithingsImport].ScheduleFor(ctx, f.b)
 		if err != nil || len(targets) != 1 || targets[0].UserID != f.user.ID {
 			t.Fatalf("targets %+v, err %v", targets, err)

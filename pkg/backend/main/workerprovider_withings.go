@@ -28,8 +28,12 @@ const (
 
 	// maxImportReadings bounds what one import result may hold.
 	maxImportReadings = 200000
-	// scheduledImportWindow is how far back an automatic import looks.
-	scheduledImportWindow = 14 * 24 * time.Hour
+	// scheduledImportWindow is how far back an automatic import looks: the last two days, so a daily
+	// run stays light for Withings and for us.
+	scheduledImportWindow = 48 * time.Hour
+	// scheduledImportHours is how often the automatic import runs by default; an administrator can
+	// change it on the workers page.
+	scheduledImportHours = 24
 )
 
 var (
@@ -102,23 +106,33 @@ func withingsProvider() workerProvider {
 			},
 			{
 				Kind: kindWithingsImport, Label: "Withings import",
-				Defaults: kindDefaults{MaxRunning: 4, MaxAttempts: 3, RetryBase: time.Minute, Timeout: 5 * time.Minute, PauseAfter: 5, Breaker: 10},
-				ScheduleFor: func(ctx context.Context, s *Backend) ([]scheduleTarget, error) {
-					ids, err := s.store.ListUsersWithIntegration(ctx, providerWithings)
-					out := make([]scheduleTarget, 0, len(ids))
-					for _, id := range ids {
-						out = append(out, scheduleTarget{UserID: id, Payload: importPayload{Since: time.Now().UTC().Add(-scheduledImportWindow).Truncate(time.Hour)}})
-					}
-					return out, err
-				},
-				Lease: leaseWithingsImport,
-				Apply: applyWithingsImport,
+				Defaults:    kindDefaults{MaxRunning: 4, MaxAttempts: 3, RetryBase: time.Minute, Timeout: 5 * time.Minute, ScheduleHours: scheduledImportHours, PauseAfter: 5, Breaker: 10},
+				ScheduleFor: scheduleWithingsImport,
+				Lease:       leaseWithingsImport,
+				Apply:       applyWithingsImport,
 				Credentials: func(ctx context.Context, s *Backend, j models.Job, data json.RawMessage) error {
 					return s.storeWithingsTokens(ctx, j, data, false)
 				},
 			},
 		},
 	}
+}
+
+// scheduleWithingsImport targets the users who are connected, whom an administrator allowed the
+// daily sync and who switched it on.
+func scheduleWithingsImport(ctx context.Context, s *Backend) ([]scheduleTarget, error) {
+	ids, err := s.store.ListUsersWithIntegration(ctx, providerWithings)
+	if err != nil {
+		return nil, err
+	}
+	since := time.Now().UTC().Add(-scheduledImportWindow).Truncate(time.Hour)
+	out := make([]scheduleTarget, 0, len(ids))
+	for _, id := range ids {
+		if u, err := s.store.GetUser(ctx, id); err == nil && u.WithingsAutoAllowed && u.WithingsAuto {
+			out = append(out, scheduleTarget{UserID: id, Payload: importPayload{Since: since}})
+		}
+	}
+	return out, nil
 }
 
 func leaseWithingsConnect(ctx context.Context, s *Backend, j models.Job) (any, error) {
