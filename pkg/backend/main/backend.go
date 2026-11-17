@@ -105,8 +105,10 @@ type Backend struct {
 	sessions   sessionStore    // the sessions: the database, or Valkey with WithState
 	noCertGen  bool            // do not generate or renew the self-signed certificate on our own
 
-	oidcMu    sync.Mutex
-	oidcCache map[string]*oidc.Provider
+	oidcMu      sync.Mutex
+	oidcCache   map[string]*oidc.Provider
+	oidcFlights map[string]*oidcFlight
+	oidcFailed  map[string]oidcFailure
 
 	statusCache statusCache // the last answer of /status, kept for a few seconds
 	state       StateServer // the Valkey server of WithState, or nil: then the database holds the state
@@ -146,6 +148,8 @@ func NewBackend(st store.Store, opts ...Option) (*Backend, error) {
 		bg:          jobs.New(),
 		store:       st,
 		oidcCache:   map[string]*oidc.Provider{},
+		oidcFlights: map[string]*oidcFlight{},
+		oidcFailed:  map[string]oidcFailure{},
 		sessions:    st,
 		limiter:     newFailureLimiter(st),
 		nonces:      spentNonces{st},

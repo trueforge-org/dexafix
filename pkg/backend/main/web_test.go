@@ -415,7 +415,7 @@ func TestWithingsFlow(t *testing.T) {
 		t.Fatalf("connect: %d %s", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	cookies := resp.Cookies()
-	if len(cookies) != 1 || cookies[0].Name != "oauth_state_withings" || cookies[0].Value != "1."+state || !cookies[0].HttpOnly {
+	if len(cookies) != 1 || cookies[0].Name != "oauth_state_withings" || cookies[0].Value == "" || strings.HasPrefix(cookies[0].Value, "1.") || !cookies[0].HttpOnly {
 		t.Fatalf("state cookie: %+v", cookies)
 	}
 
@@ -441,6 +441,18 @@ func TestWithingsFlow(t *testing.T) {
 	if msg := flash(callback("error=access_denied&state="+state, cookies[0])); !strings.Contains(msg, "not authorised") {
 		t.Fatalf("denied: %q", msg)
 	}
+	// A state is good for one callback: the same cookie and state again are refused ...
+	if r := callback("code=abc&state="+state, cookies[0]); r.StatusCode != 400 {
+		t.Fatalf("a state used twice: %d", r.StatusCode)
+	}
+	// ... so connecting again starts again.
+	resp, err = c.Get(ts.URL + "/u/1/integrations/withings/connect")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	auth, _ = url.Parse(resp.Header.Get("Location"))
+	state, cookies = auth.Query().Get("state"), resp.Cookies()
 	if msg := flash(callback("code=abc&state="+state, cookies[0])); !strings.Contains(msg, "connected") {
 		t.Fatalf("connected: %q", msg)
 	}

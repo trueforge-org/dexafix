@@ -17,6 +17,7 @@ import (
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
+	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
 	"github.com/trueforge-org/dexafix/pkg/store"
 )
@@ -83,6 +84,16 @@ func (s *Backend) internalImport(w http.ResponseWriter, r *http.Request, u model
 	flashed(w, s.importMessage(p, in.Day, job))
 }
 
+// oauthState is what the state cookie of a connection (Withings and the like) carries: the user who
+// started it, because the provider returns to a fixed callback URL, and the state the provider must
+// send back. It is sealed (purpose sealOAuthState) and good for one callback.
+type oauthState struct {
+	UID   int64  `json:"u"`
+	State string `json:"s"`
+}
+
+const sealOAuthState = "oauth-connect"
+
 // internalConnect sets the anti-CSRF state cookie, which carries the user id because the provider
 // returns to a fixed callback URL, and answers with the provider's authorize URL.
 func (s *Backend) internalConnect(w http.ResponseWriter, r *http.Request, u models.User) {
@@ -100,8 +111,10 @@ func (s *Backend) internalConnect(w http.ResponseWriter, r *http.Request, u mode
 		internalError(w, err)
 		return
 	}
+	// Sealed and single-use like the other state cookies: it cannot be made up or kept for a second try.
+	sealed, _ := must.Value2(s.sealValue(sealOAuthState, oauthState{UID: u.ID, State: state}, oauthStateTTL)) // cannot fail: a plain struct
 	http.SetCookie(w, &http.Cookie{
-		Name: oauthCookiePrefix + name, Value: strconv.FormatInt(u.ID, 10) + "." + state, Path: "/",
+		Name: oauthCookiePrefix + name, Value: sealed, Path: "/",
 		MaxAge: int(oauthStateTTL.Seconds()), HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isSecure(r),
 	})
 	internalJSON(w, http.StatusOK, map[string]string{"redirect": authURL})
@@ -121,22 +134,26 @@ func (s *Backend) internalCallback(w http.ResponseWriter, r *http.Request) {
 	cookieName := oauthCookiePrefix + name
 	http.SetCookie(w, &http.Cookie{Name: cookieName, Path: "/", MaxAge: -1, HttpOnly: true})
 	c, err := r.Cookie(cookieName)
-	idStr, state, found := "", "", false
+	var st oauthState
+	var nonce string
+	var expires time.Time
+	found := false
 	if err == nil {
-		idStr, state, found = strings.Cut(c.Value, ".")
+		nonce, expires, found = s.openValue(sealOAuthState, c.Value, &st)
 	}
 	cu := currentUser(r)
-	if !found || state == "" || subtle.ConstantTimeCompare([]byte(state), []byte(in.State)) != 1 {
+	if !found || st.State == "" || subtle.ConstantTimeCompare([]byte(st.State), []byte(in.State)) != 1 {
 		internalFail(w, http.StatusBadRequest, apiclient.CodeInvalid, "invalid or expired state, start the connection again")
 		return
 	}
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		internalFail(w, http.StatusBadRequest, apiclient.CodeInvalid, "invalid state")
-		return
-	}
+	id := st.UID
 	if cu == nil || cu.ID != id { // the account must be linked by the user who started the flow
 		internalFail(w, http.StatusForbidden, apiclient.CodeForbidden, "sign in as the user who started the connection")
+		return
+	}
+	// One callback per state, and only the user's own: a request by somebody else does not spend it.
+	if !s.nonces.use(r.Context(), nonce, expires) {
+		internalFail(w, http.StatusBadRequest, apiclient.CodeInvalid, "invalid or expired state, start the connection again")
 		return
 	}
 	f := apiclient.Flash{UserID: cu.ID}

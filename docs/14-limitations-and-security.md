@@ -57,6 +57,12 @@
   requests get 503 or 429 with `Retry-After`. The budgets keep a flood on the
   public API from starving the internal one. See
   [Split deployment](15-split-deployment.md#running-more-api-processes).
+- **Sign-in providers are fetched with care.** An OpenID discovery runs once at a
+  time for an issuer, outside any lock; a failure is remembered for a minute (and
+  forgotten when an administrator changes the provider); no answer of a provider
+  is read beyond 1 MiB. The state of a provider sign-in is in a `SameSite=Lax`
+  cookie (only Apple, which answers with a cross-site POST, gets `SameSite=None`),
+  and the state of a Withings connection is sealed and good for one callback.
 - **Outgoing connections** of the api process go only to the sign-in providers
   and the mail server an administrator configured, and are checked when they are
   made, on the address the name resolved to. Cloud metadata services and other

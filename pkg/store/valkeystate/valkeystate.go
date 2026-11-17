@@ -110,12 +110,16 @@ func (v *Client) RecordFailure(ctx context.Context, key string, at time.Time) er
 	_, _ = rand.Read(salt[:]) // never fails: since Go 1.24 a broken random source ends the program
 	// The member must be unique, or two failures in the same millisecond count once.
 	member := strconv.FormatInt(at.UnixNano(), 10) + "-" + hex.EncodeToString(salt[:])
-	k := failPrefix + key
-	return firstError(v.c.DoMulti(ctx,
-		v.c.B().Zadd().Key(k).ScoreMember().ScoreMember(float64(at.UnixMilli()), member).Build(),
-		v.c.B().Pexpire().Key(k).Milliseconds(failTTL.Milliseconds()).Build(),
-	))
+	// One script, so the failure and its expiry are set together: a connection that breaks between
+	// two commands would leave a counter without an expiry, in memory that is never evicted.
+	return recordFailure.Exec(ctx, v.c, []string{failPrefix + key},
+		[]string{strconv.FormatInt(at.UnixMilli(), 10), member, strconv.FormatInt(failTTL.Milliseconds(), 10)}).Error()
 }
+
+// recordFailure adds a failure to the sorted set of a key and renews the key's expiry, atomically.
+var recordFailure = valkey.NewLuaScript(`redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])
+redis.call('PEXPIRE', KEYS[1], ARGV[3])
+return 1`)
 
 // CountFailures counts the failures under key that are newer than since.
 func (v *Client) CountFailures(ctx context.Context, key string, since time.Time) (int, error) {

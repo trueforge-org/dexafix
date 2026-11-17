@@ -401,7 +401,7 @@ func (s *Backend) internalProviderStart(w http.ResponseWriter, r *http.Request) 
 		st.Link = u.ID
 	}
 	sealed := s.sealState(st)
-	setProviderCookie(w, r, sealed, int(providerStateTTL.Seconds()))
+	setProviderCookie(w, r, sealed, int(providerStateTTL.Seconds()), p.Kind == models.ProviderKindApple)
 	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(st.Verifier)}
 	if p.Kind != models.ProviderKindOAuth2 {
 		opts = append(opts, oidc.Nonce(st.Nonce))
@@ -440,7 +440,7 @@ func (s *Backend) internalProviderCallback(w http.ResponseWriter, r *http.Reques
 		providerCallbackInvalid(w)
 		return
 	}
-	setProviderCookie(w, r, "", -1)
+	setProviderCookie(w, r, "", -1, p.Kind == models.ProviderKindApple)
 	st, nonce, expires, ok := s.openState(c.Value)
 	if !ok || st.Slug != slug || !hmac.Equal([]byte(st.State), []byte(r.FormValue("state"))) {
 		providerCallbackInvalid(w)

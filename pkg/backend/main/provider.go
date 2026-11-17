@@ -61,30 +61,133 @@ func (s *Backend) openState(value string) (st providerState, nonce string, expir
 	return st, nonce, expires, ok
 }
 
-func setProviderCookie(w http.ResponseWriter, r *http.Request, value string, maxAge int) {
+// setProviderCookie sets (or, with a negative maxAge, clears) the cookie that carries the state of a
+// provider sign-in. It is SameSite=Lax, which is what keeps a cross-site POST to the callback of any
+// provider from carrying it; only a provider that answers with a cross-site POST (Apple's form_post)
+// gets SameSite=None.
+func setProviderCookie(w http.ResponseWriter, r *http.Request, value string, maxAge int, crossSitePost bool) {
 	c := &http.Cookie{Name: providerCookie, Value: value, Path: "/auth/", MaxAge: maxAge, HttpOnly: true, SameSite: http.SameSiteLaxMode}
-	if isSecure(r) { // Apple's cross-site POST only carries SameSite=None cookies
-		c.SameSite, c.Secure = http.SameSiteNoneMode, true
+	if isSecure(r) {
+		c.Secure = true
+		if crossSitePost { // Apple's cross-site POST only carries SameSite=None cookies
+			c.SameSite = http.SameSiteNoneMode
+		}
 	}
 	http.SetCookie(w, c)
 }
 
-func (s *Backend) oidcContext(ctx context.Context) context.Context {
-	return oidc.ClientContext(ctx, s.httpClient)
+// maxProviderResponse is the most a provider's answer may hold (discovery documents, key sets, tokens).
+const maxProviderResponse = 1 << 20
+
+// oidcFailureTTL is how long a failed discovery is remembered, so a provider that is down is asked
+// once a minute and not once per visitor.
+const oidcFailureTTL = time.Minute
+
+// limitedTransport cuts what a provider answers at maxProviderResponse bytes: an endless body would
+// otherwise be read into memory.
+type limitedTransport struct{ base http.RoundTripper }
+
+func (t limitedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(r)
+	if err == nil {
+		resp.Body = &limitedBody{ReadCloser: resp.Body, left: maxProviderResponse}
+	}
+	return resp, err
 }
 
-// oidcProvider returns the discovered provider, fetching its configuration on first use.
+type limitedBody struct {
+	io.ReadCloser
+	left int64
+}
+
+var errProviderResponseTooLarge = errors.New("the provider's answer is too large")
+
+func (b *limitedBody) Read(p []byte) (int, error) {
+	if b.left <= 0 { // at the limit: the body may end exactly here, or go on
+		var one [1]byte
+		if n, err := b.ReadCloser.Read(one[:]); n > 0 {
+			return 0, errProviderResponseTooLarge
+		} else {
+			return 0, err
+		}
+	}
+	if int64(len(p)) > b.left {
+		p = p[:b.left]
+	}
+	n, err := b.ReadCloser.Read(p)
+	b.left -= int64(n)
+	return n, err
+}
+
+func (s *Backend) oidcContext(ctx context.Context) context.Context {
+	c := *s.httpClient
+	base := c.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	c.Transport = limitedTransport{base}
+	return oidc.ClientContext(ctx, &c)
+}
+
+// oidcFlight is a discovery that is running; others that want the same issuer wait for it.
+type oidcFlight struct {
+	done chan struct{}
+	prov *oidc.Provider
+	err  error
+}
+
+// oidcFailure is a discovery that failed, remembered for oidcFailureTTL.
+type oidcFailure struct {
+	err   error
+	until time.Time
+}
+
+// oidcProvider returns the discovered provider, fetching its configuration on first use. The fetch
+// runs outside the lock (a slow provider must not hold up the others), once at a time for an issuer,
+// and a failure is remembered for a minute.
 func (s *Backend) oidcProvider(ctx context.Context, p models.AuthProvider) (*oidc.Provider, error) {
 	s.oidcMu.Lock()
-	defer s.oidcMu.Unlock()
-
 	if prov, ok := s.oidcCache[p.Issuer]; ok {
+		s.oidcMu.Unlock()
 		return prov, nil
 	}
+	if f, ok := s.oidcFailed[p.Issuer]; ok && time.Now().Before(f.until) {
+		s.oidcMu.Unlock()
+		return nil, f.err
+	}
+	if fl, ok := s.oidcFlights[p.Issuer]; ok {
+		s.oidcMu.Unlock()
+		select {
+		case <-fl.done:
+			return fl.prov, fl.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	fl := &oidcFlight{done: make(chan struct{})}
+	s.oidcFlights[p.Issuer] = fl
+	s.oidcMu.Unlock()
 
+	prov, err := s.discoverOIDC(ctx, p)
+
+	s.oidcMu.Lock()
+	delete(s.oidcFlights, p.Issuer)
+	switch {
+	case err == nil:
+		s.oidcCache[p.Issuer] = prov
+		delete(s.oidcFailed, p.Issuer)
+	case ctx.Err() == nil: // a visitor who left says nothing about the provider
+		s.oidcFailed[p.Issuer] = oidcFailure{err: err, until: time.Now().Add(oidcFailureTTL)}
+	}
+	s.oidcMu.Unlock()
+	fl.prov, fl.err = prov, err
+	close(fl.done)
+	return prov, err
+}
+
+func (s *Backend) discoverOIDC(ctx context.Context, p models.AuthProvider) (*oidc.Provider, error) {
 	oidcCtx := s.oidcContext(ctx)
 	prov, err := oidc.NewProvider(oidcCtx, p.Issuer)
-
 	if err != nil {
 		var mismatch *oidc.IssuerMismatchError
 
@@ -101,8 +204,6 @@ func (s *Backend) oidcProvider(ctx context.Context, p models.AuthProvider) (*oid
 			return nil, err
 		}
 	}
-
-	s.oidcCache[p.Issuer] = prov
 	return prov, nil
 }
 
@@ -110,6 +211,7 @@ func (s *Backend) forgetOIDCProvider(issuer string) {
 	s.oidcMu.Lock()
 	defer s.oidcMu.Unlock()
 	delete(s.oidcCache, issuer)
+	delete(s.oidcFailed, issuer) // an administrator who changed the provider wants it tried again at once
 }
 
 func (s *Backend) oauthConfig(ctx context.Context, p models.AuthProvider, r *http.Request) (*oauth2.Config, *oidc.Provider, error) {

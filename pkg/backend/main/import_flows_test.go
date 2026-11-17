@@ -285,11 +285,12 @@ func TestConnectingAndDisconnectingAProvider(t *testing.T) {
 		t.Helper()
 		rec := httptest.NewRecorder()
 		ctx := apiclient.WithRequest(r.alice, apiclient.Request{Cookie: r.cookie, Secure: true, Relay: rec})
-		if _, err := r.api.ConnectIntegration(ctx, 2, "withings"); err != nil {
+		target, err := r.api.ConnectIntegration(ctx, 2, "withings")
+		if err != nil {
 			t.Fatal(err)
 		}
 		ck := relayedCookie(rec, oauthCookiePrefix+"withings")
-		return ck.Name + "=" + ck.Value, strings.TrimPrefix(ck.Value, "2.")
+		return ck.Name + "=" + ck.Value, stateOfTarget(t, target)
 	}
 	back := func(r *jobRig, cookie, state, code string) (apiclient.Flash, error) {
 		ctx := apiclient.WithRequest(context.Background(), apiclient.Request{Cookie: r.cookie + "; " + cookie})

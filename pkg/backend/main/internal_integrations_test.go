@@ -50,13 +50,11 @@ func TestSplitIntegrationStateCookieReachesTheRelay(t *testing.T) {
 		t.Fatalf("target %q err %v", target, err)
 	}
 	ck := relayedCookie(rec, oauthCookiePrefix+"withings")
-	if ck == nil || !ck.HttpOnly || !ck.Secure || !strings.HasPrefix(ck.Value, "1.") {
-		t.Fatalf("state cookie %+v", ck)
+	if ck == nil || !ck.HttpOnly || !ck.Secure || ck.Value == "" || strings.HasPrefix(ck.Value, "1.") {
+		t.Fatalf("state cookie %+v: it must be sealed, not a plain user id and state", ck)
 	}
-	state := strings.TrimPrefix(ck.Value, "1.")
-	if !strings.Contains(target, state) {
-		t.Errorf("the authorize URL does not carry the state")
-	}
+	state := stateOfTarget(t, target)
+	_ = state
 
 	// The callback with a wrong state is refused, and the state cookie is cleared either way.
 	back := httptest.NewRecorder()
@@ -74,11 +72,12 @@ func TestSplitIntegrationCallbackRefusesAnotherUser(t *testing.T) {
 	c, one, two := integrationBackend(t)
 	rec := httptest.NewRecorder()
 	ctx := apiclient.WithRequest(context.Background(), apiclient.Request{Cookie: one, Relay: rec})
-	if _, err := c.ConnectIntegration(ctx, 1, "withings"); err != nil {
+	target, err := c.ConnectIntegration(ctx, 1, "withings")
+	if err != nil {
 		t.Fatal(err)
 	}
 	ck := relayedCookie(rec, oauthCookiePrefix+"withings")
-	state := strings.TrimPrefix(ck.Value, "1.")
+	state := stateOfTarget(t, target)
 	other := apiclient.WithRequest(context.Background(), apiclient.Request{Cookie: two + "; " + ck.Name + "=" + ck.Value})
 	if _, err := c.IntegrationCallback(other, "withings", state, "code", ""); apiclient.StatusOf(err) != http.StatusForbidden {
 		t.Errorf("another user's callback: %v", err)
@@ -88,6 +87,10 @@ func TestSplitIntegrationCallbackRefusesAnotherUser(t *testing.T) {
 	f, err := c.IntegrationCallback(own, "withings", state, "", "access_denied")
 	if err != nil || f.UserID != 1 || !strings.Contains(f.Message, "not authorised") {
 		t.Errorf("flash %+v err %v", f, err)
+	}
+	// A state is good for one callback: the same one again is refused.
+	if _, err := c.IntegrationCallback(own, "withings", state, "", "access_denied"); apiclient.StatusOf(err) != http.StatusBadRequest {
+		t.Errorf("a second callback with the same state: %v", err)
 	}
 }
 
@@ -109,4 +112,15 @@ func TestSplitIntegrationRefusesAnotherUsersId(t *testing.T) {
 	if _, err := c.StrengthLevelStatus(ctx, 1); apiclient.StatusOf(err) != http.StatusNotFound {
 		t.Errorf("strengthlevel status: %v", err)
 	}
+}
+
+// stateOfTarget is the state in a provider's authorize URL: the cookie is sealed, so the URL is
+// where a test reads it.
+func stateOfTarget(t *testing.T, target string) string {
+	t.Helper()
+	u, err := url.Parse(target)
+	if err != nil || u.Query().Get("state") == "" {
+		t.Fatalf("no state in %q: %v", target, err)
+	}
+	return u.Query().Get("state")
 }

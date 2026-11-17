@@ -225,3 +225,22 @@ func TestRedactRemovesThePasswordAsWrittenAndEscaped(t *testing.T) {
 		t.Fatalf("without a password the text changed: %q", got)
 	}
 }
+
+// A counter always has an expiry: the server never evicts, so one without would stay for good.
+func TestAFailureAndItsExpiryAreSetTogether(t *testing.T) {
+	v, mr := open(t)
+	ctx := context.Background()
+	if err := v.RecordFailure(ctx, "k", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if ttl := mr.TTL(failPrefix + "k"); ttl <= 0 || ttl > failTTL {
+		t.Fatalf("ttl of the counter: %v", ttl)
+	}
+	mr.FastForward(failTTL / 2)
+	if err := v.RecordFailure(ctx, "k", time.Now()); err != nil { // a new failure renews it
+		t.Fatal(err)
+	}
+	if ttl := mr.TTL(failPrefix + "k"); ttl <= failTTL/2 {
+		t.Fatalf("the expiry was not renewed: %v", ttl)
+	}
+}

@@ -122,3 +122,28 @@ func countAdmins(t *testing.T, s *Store) int {
 	}
 	return n
 }
+
+// A subject that belongs to another user is not overwritten by a second user who names it.
+func TestAnIdentityOfAnotherUserIsNotOverwritten(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	a, _ := s.CreateUser(ctx, "owner-a")
+	b, _ := s.CreateUser(ctx, "other-b")
+	if err := s.PutIdentity(ctx, models.Identity{UserID: a.ID, Provider: "idp", Subject: "s1", Secret: "mine"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutIdentity(ctx, models.Identity{UserID: b.ID, Provider: "idp", Subject: "s1", Secret: "taken"}); !errors.Is(err, store.ErrExists) {
+		t.Fatalf("a subject of another user: %v", err)
+	}
+	got, err := s.GetIdentity(ctx, "idp", "s1")
+	if err != nil || got.UserID != a.ID || got.Secret != "mine" {
+		t.Fatalf("the identity changed: %+v %v", got, err)
+	}
+	// The owner may still change their own (a new password hash).
+	if err := s.PutIdentity(ctx, models.Identity{UserID: a.ID, Provider: "idp", Subject: "s1", Secret: "newer"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetIdentity(ctx, "idp", "s1"); got.Secret != "newer" {
+		t.Fatalf("the owner's update was lost: %+v", got)
+	}
+}

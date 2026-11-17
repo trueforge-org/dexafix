@@ -261,13 +261,21 @@ func (s *Store) ListUserIdentities(ctx context.Context, userID int64) ([]models.
 
 func (s *Store) PutIdentity(ctx context.Context, id models.Identity) error {
 	row := identityRow{Provider: id.Provider, Subject: id.Subject, UserID: id.UserID, Secret: id.Secret, CreatedAt: now()}
-	_, err := s.db.NewInsert().Model(&row).
+	// An existing identity is updated only when it is this user's: a subject that belongs to another
+	// user is not theirs to change (before, the secret of that identity was overwritten).
+	res, err := s.db.NewInsert().Model(&row).
 		On("CONFLICT (provider, subject) DO UPDATE").
-		Set("secret = EXCLUDED.secret").Exec(ctx)
+		Set("secret = EXCLUDED.secret").Where("identity_row.user_id = EXCLUDED.user_id").Exec(ctx)
 	if isFK(err) {
 		return store.ErrNotFound
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return store.ErrExists
+	}
+	return nil
 }
 
 func (s *Store) DeleteIdentity(ctx context.Context, userID int64, provider string) error {

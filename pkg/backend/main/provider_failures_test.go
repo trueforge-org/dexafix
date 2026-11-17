@@ -18,6 +18,7 @@ import (
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
+	"github.com/trueforge-org/dexafix/pkg/shared/edge"
 )
 
 // oauthFake is an identity provider that answers whatever a test sets: the token endpoint, the
@@ -210,8 +211,8 @@ func TestStartingAProviderSignInFailsCleanly(t *testing.T) {
 				got = c
 			}
 		}
-		if got == nil || !got.Secure || got.SameSite != http.SameSiteNoneMode {
-			t.Fatalf("state cookie %+v", got)
+		if got == nil || !got.Secure || got.SameSite != http.SameSiteLaxMode {
+			t.Fatalf("state cookie %+v: it must be Lax, a cross-site POST must not carry it", got)
 		}
 	})
 	t.Run("linking needs the current password", func(t *testing.T) {
@@ -504,5 +505,31 @@ func TestProviderNamesAndAddressesAreChosenCarefully(t *testing.T) {
 	}
 	if got := verifiedEmail(map[string]any{"email_verified": "true", "email": "A@Example.com"}); got != "a@example.com" {
 		t.Errorf("verified string = %q", got)
+	}
+}
+
+// Only a provider that answers with a cross-site POST (Apple's form_post) gets a cookie that a
+// cross-site POST carries.
+func TestOnlyApplesStateCookieIsSameSiteNone(t *testing.T) {
+	secure := httptest.NewRequest("GET", "/", nil)
+	secure = secure.WithContext(edge.WithSecure(secure.Context(), true))
+	plain := httptest.NewRequest("GET", "/", nil)
+	for name, tc := range map[string]struct {
+		r         *http.Request
+		crossSite bool
+		sameSite  http.SameSite
+		secure    bool
+	}{
+		"a plain provider, secure":     {secure, false, http.SameSiteLaxMode, true},
+		"Apple, secure":                {secure, true, http.SameSiteNoneMode, true},
+		"Apple, over plain HTTP":       {plain, true, http.SameSiteLaxMode, false},
+		"a plain provider, plain HTTP": {plain, false, http.SameSiteLaxMode, false},
+	} {
+		rec := httptest.NewRecorder()
+		setProviderCookie(rec, tc.r, "v", 60, tc.crossSite)
+		cs := rec.Result().Cookies()
+		if len(cs) != 1 || cs[0].SameSite != tc.sameSite || cs[0].Secure != tc.secure {
+			t.Errorf("%s: %+v", name, cs)
+		}
 	}
 }
