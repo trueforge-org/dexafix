@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -80,7 +81,11 @@ func (s *scriptedSMTP) handle(conn net.Conn) {
 		if err != nil {
 			return
 		}
-		verb := strings.ToUpper(strings.Fields(line + " ")[0])
+		fields := strings.Fields(line)
+		if len(fields) == 0 { // a blank line (the client's writes can arrive split): nothing to answer
+			continue
+		}
+		verb := strings.ToUpper(fields[0])
 		s.mu.Lock()
 		s.seen = append(s.seen, verb)
 		s.mu.Unlock()
@@ -206,5 +211,29 @@ func TestSendAsksTheDialControlBeforeConnectingAndStopsWhenItRefuses(t *testing.
 	}
 	if asked.Load() != 1 {
 		t.Fatalf("the control was asked %d times, want once", asked.Load())
+	}
+}
+
+// The scripted server ignores a blank line (a client's writes may arrive split) and answers the next
+// command: this makes that path run every time, not only when the timing happens to produce it.
+func TestTheScriptedServerIgnoresABlankLine(t *testing.T) {
+	srv := newScriptedSMTP(t, nil)
+	conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", srv.port()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	r := bufio.NewReader(conn)
+	if greeting, err := r.ReadString('\n'); err != nil || !strings.HasPrefix(greeting, "220") {
+		t.Fatalf("greeting %q %v", greeting, err)
+	}
+	if _, err := conn.Write([]byte("\r\n   \r\nMAIL FROM:<a@b>\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	if reply, err := r.ReadString('\n'); err != nil || !strings.HasPrefix(reply, "250") {
+		t.Fatalf("reply %q %v", reply, err)
+	}
+	if got := srv.verbs(); len(got) != 1 || got[0] != "MAIL" {
+		t.Fatalf("verbs %v", got)
 	}
 }
