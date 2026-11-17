@@ -139,8 +139,9 @@ enters their e-mail address, and the page always gives the same answer, whether
 or not an account with a password uses that address. If one does, a link valid
 for one hour is mailed in the background. The link is built from the base URL
 only, never from the Host header. Accounts that sign in only through a provider
-get no e-mail. At most 3 e-mails are sent per address and 10 per client address
-in 15 minutes.
+get no e-mail. In 15 minutes at most 3 e-mails are sent to an address on request of
+one client address (so whoever types your address cannot use up your own tries),
+20 to an address in total, and 10 for one client address.
 
 Using a link:
 
@@ -295,8 +296,12 @@ Some values are encrypted in the database. See [Encryption](08-encryption.md) fo
 which ones and how to manage the key.
 
 Failed password sign-ins are counted in the database, so every backend process on it
-shares the counts: 10 per login name and 60 per
-client address in 15 minutes, after which sign-in answers 429. The address is the
+shares the counts: 10 per login name from one client address, 100 per login name
+from all addresses together and 60 per client address in 15 minutes, after which
+sign-in answers 429. A login name can therefore be locked for the address that
+typed it wrong, not for its owner at another address. A login name longer than an
+e-mail address (254 characters) is refused at once and counts against the client
+address only. The address is the
 visitor's: behind a reverse proxy, set **Trusted proxies** on the Admin page (see
 [Running behind a reverse proxy](03-reverse-proxy.md)), or everyone
 shares the proxy's address and its count. Limit sign-in attempts at the proxy as

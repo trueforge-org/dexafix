@@ -232,11 +232,16 @@ func (s *Backend) internalForgot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	email, valid := parseEmail(in.Email)
-	ipK, addrK := "reset-ip:"+ipKey(r), "reset-addr:"+email
-	allowed := valid && !s.limiter.Blocked(r.Context(), ipK, maxResetIP) && !s.limiter.Blocked(r.Context(), addrK, maxResetAddr)
+	// The mails to one address are counted per client address (so that whoever types a victim's
+	// address cannot use up the victim's own tries) and, much higher, from everywhere together (so
+	// that an address cannot be flooded with mail).
+	ipK, addrK, addrIPK := "reset-ip:"+ipKey(r), "reset-addr:"+email, "reset-addr-ip:"+hashToken(email)+":"+ipKey(r)
+	allowed := valid && !s.limiter.Blocked(r.Context(), ipK, maxResetIP) &&
+		!s.limiter.Blocked(r.Context(), addrIPK, maxResetAddr) && !s.limiter.Blocked(r.Context(), addrK, maxResetAddrAll)
 	// Every request counts, not only failures: this is a mail sender.
 	s.limiter.Fail(r.Context(), ipK)
 	if valid {
+		s.limiter.Fail(r.Context(), addrIPK)
 		s.limiter.Fail(r.Context(), addrK)
 	}
 	if allowed {

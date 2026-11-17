@@ -269,6 +269,12 @@ func (s *Backend) throttledVerify(r *http.Request, login, password string) (mode
 	if s.throttled(r, login) { // only reads: a client that is blocked costs no slot and no attempt
 		return models.User{}, false, errThrottled
 	}
+	// No login is longer than an e-mail address. Refusing it here, before it becomes a key in the
+	// state store, keeps a flood of enormous names from filling it; it counts against the address.
+	if len(login) > maxEmailLen {
+		s.recordFailure(r)
+		return models.User{}, false, nil
+	}
 	release, ok := s.bcryptSlot(ctx)
 	if !ok {
 		return models.User{}, false, errBusy // nothing was counted: the check did not happen
@@ -276,7 +282,7 @@ func (s *Backend) throttledVerify(r *http.Request, login, password string) (mode
 	defer release()
 	// The attempt is counted before the password is checked, so that a burst of parallel guesses
 	// cannot all pass the check above before the first failure is on record.
-	if login != "" && !s.limiter.Attempt(ctx, loginKey(login), maxLoginFail) {
+	if login != "" && !(s.limiter.Attempt(ctx, loginAddrKey(r, login), maxLoginFail) && s.limiter.Attempt(ctx, loginKey(login), maxLoginFailAll)) {
 		return models.User{}, false, errThrottled
 	}
 	u, ok, err := s.verifyPassword(ctx, login, password)
@@ -284,6 +290,7 @@ func (s *Backend) throttledVerify(r *http.Request, login, password string) (mode
 	case err != nil:
 	case ok:
 		s.limiter.Reset(ctx, loginKey(login))
+		s.limiter.Reset(ctx, loginAddrKey(r, login))
 	default:
 		s.recordFailure(r)
 	}

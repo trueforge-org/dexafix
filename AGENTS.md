@@ -84,7 +84,7 @@ DEXAFIX_TEST_SPLIT=1 go test -race -count=1 ./pkg/backend/... ./pkg/frontend   #
 ## Security
 
 - Report vulnerabilities privately, not in public issues or PRs.
-- Password checks are expensive on purpose and capped; failed attempts are counted per login name and per client address (IPv6 per /64) in the database; the answers for unknown and known accounts look the same.
+- Password checks are expensive on purpose and capped; failed attempts are counted per login name and client address, per login name overall (much higher, so one client cannot lock the owner out) and per client address (IPv6 per /64), under a fixed-size key whatever the login name is, in the database; the answers for unknown and known accounts look the same.
 - Sessions and personal access tokens are stored hashed. Sealed cookies (second step, passkey ceremony, provider state, admin step-up) are HMAC-sealed with a key that only the backend holds, and carry a single-use nonce.
 - Personal access tokens, Basic credentials and provider ID tokens work on `/api/` only, never on the internal API or the web forms.
 - The workers' endpoints (`/internal/v1/worker`) take the **worker secret** only, and the web frontend's service secret does not open them (and the reverse). The two secrets must differ (`serve api` refuses to start otherwise). A worker sees a user's credentials only inside the lease of one job, and every call about a job carries its lease token.

@@ -18,9 +18,10 @@ const (
 	resetAdminTTL = 24 * time.Hour
 	resetEmailTTL = time.Hour
 
-	maxResetIP   = 10 // reset e-mails per client address within the failure window
-	maxResetAddr = 3  // reset e-mails per e-mail address within the failure window
-	resetPath    = "/password/reset"
+	maxResetIP      = 10 // reset e-mails per client address within the failure window
+	maxResetAddr    = 3  // reset e-mails per e-mail address and client address within the failure window
+	maxResetAddrAll = 20 // reset e-mails per e-mail address from all addresses together
+	resetPath       = "/password/reset"
 
 	settingRequire2FA   = "auth.require_2fa"
 	require2FAOff       = "off"

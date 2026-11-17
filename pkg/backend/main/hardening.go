@@ -16,8 +16,9 @@ import (
 // lives in pkg/shared/edge. What stays here is specific to the sign-in and page code.
 
 const (
-	maxLoginFail = 10 // per login name
-	maxIPFail    = 60 // per client address: generous, because a proxy makes many users share one
+	maxLoginFail    = 10  // per login name and client address
+	maxLoginFailAll = 100 // per login name from all addresses together: far above what one person mistypes
+	maxIPFail       = 60  // per client address: generous, because a proxy makes many users share one
 )
 
 // failWindow is the sliding window in which failed attempts count towards a lock-out.
@@ -146,12 +147,26 @@ func (n spentNonces) use(ctx context.Context, nonce string, expires time.Time) b
 	return first
 }
 
-func loginKey(login string) string { return "login:" + strings.ToLower(strings.TrimSpace(login)) }
+// loginKey is the counter of a login name from all addresses. The name is hashed, so a key has a
+// fixed size whatever is typed: a login name is chosen by whoever asks, and every distinct one is a
+// key in the state store for the whole failure window.
+func loginKey(login string) string {
+	return "login:" + hashToken(strings.ToLower(strings.TrimSpace(login)))
+}
 
-// throttled reports whether this client or this login name made too many failed attempts.
+// loginAddrKey is the counter of a login name from one client address. Ten wrong passwords from an
+// address lock that address out of the account, not the person who owns it: whoever types a
+// victim's name cannot use up the tries of the victim's own address.
+func loginAddrKey(r *http.Request, login string) string {
+	return "loginaddr:" + hashToken(strings.ToLower(strings.TrimSpace(login))) + ":" + ipKey(r)
+}
+
+// throttled reports whether this client, this client with this login name, or this login name
+// from everywhere made too many failed attempts.
 func (s *Backend) throttled(r *http.Request, login string) bool {
 	ctx := r.Context()
-	return s.limiter.Blocked(ctx, ipKey(r), maxIPFail) || (login != "" && s.limiter.Blocked(ctx, loginKey(login), maxLoginFail))
+	return s.limiter.Blocked(ctx, ipKey(r), maxIPFail) ||
+		(login != "" && (s.limiter.Blocked(ctx, loginAddrKey(r, login), maxLoginFail) || s.limiter.Blocked(ctx, loginKey(login), maxLoginFailAll)))
 }
 
 // recordFailure counts a wrong password against the client address. The login name was counted

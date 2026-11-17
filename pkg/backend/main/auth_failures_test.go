@@ -43,10 +43,12 @@ func TestBasicCredentialsOnTheAPIAreRefusedWhenTheyShouldBe(t *testing.T) {
 	}
 
 	t.Run("a login that failed too often is refused with the right password", func(t *testing.T) {
+		from := httptest.NewRequest("GET", path, nil) // the address publicGet uses
+		from.RemoteAddr = "192.0.2.50:1234"
 		for i := 0; i < maxLoginFail; i++ {
-			g.b.limiter.Fail(ctx, loginKey("alice@example.com"))
+			g.b.limiter.Fail(ctx, loginAddrKey(from, "alice@example.com"))
 		}
-		defer g.b.limiter.Reset(ctx, loginKey("alice@example.com"))
+		defer g.b.limiter.Reset(ctx, loginAddrKey(from, "alice@example.com"))
 		if rec := g.publicGet(ctx, path, good); rec.Code != http.StatusUnauthorized {
 			t.Fatalf("locked-out login: %d", rec.Code)
 		}
