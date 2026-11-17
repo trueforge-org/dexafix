@@ -2,7 +2,12 @@ package sqlstore
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/pbkdf2"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"errors"
 	"fmt"
 
@@ -13,11 +18,22 @@ import (
 // The names Provision creates. They are fixed: the connection strings that deploy init writes and the
 // body service's search_path refer to them.
 const (
-	ProvisionAppRole    = "dexafix"      // the api's role; owns the database
-	ProvisionBodyRole   = "dexafix_body" // the body service's role; owns the schema "body" only
+	ProvisionAppRole    = "dexafix"       // the api's role; owns what it creates in the database, not the database
+	ProvisionBodyRole   = "dexafix_body"  // the body service's role; owns the schema "body" only
+	ProvisionOwnerRole  = "dexafix_owner" // owns the database and cannot log in
 	ProvisionDatabase   = "dexafix"
 	ProvisionBodySchema = "body"
 )
+
+// minProvisionPassword is the shortest password Provision accepts for a role. `secrets init` makes 64
+// hexadecimal characters.
+const minProvisionPassword = 16
+
+// provisionRunLockKey is the advisory lock that keeps two runs of Provision against one server apart (the
+// roles and the database are shared state, and a rerun while another is half done could fail or
+// undo it). It is taken in the database of the administrator's connection. The tests' own lock
+// (provisionLockKey in provision_test.go) is another number: they hold it while they call Provision.
+const provisionRunLockKey = 7274709
 
 // ProvisionOptions are what Provision needs. AdminDSN is a superuser's connection string (to any
 // database, usually "postgres"); the two passwords are the ones the application roles get.
@@ -28,16 +44,24 @@ type ProvisionOptions struct {
 }
 
 // Provision makes the PostgreSQL roles, the database and the body schema the recommended deployment
-// runs on, so that no service runs as a superuser and a leak of one cannot read the other's data:
+// runs on, so that no service runs as a superuser and a leak of one cannot read the other's data or
+// damage the database:
 //
-//	dexafix        owns the database, has no rights in the schema "body"
+//	dexafix_owner  owns the database; cannot log in. Nobody who can log in may drop it, take its
+//	               connect right from the others or change its settings.
+//	dexafix        works in the schema "public" and has no rights in the schema "body"
 //	dexafix_body   owns the schema "body" and can use nothing else
 //
-// It can be run again and again: what exists is kept and the passwords are set again, so a changed
-// password file takes effect at the next run. It never drops anything.
+// It can be run again and again: what exists is kept (a database that an older version let the api's
+// role own goes to dexafix_owner), the roles lose any extra attributes and memberships they have, and
+// the passwords are set again, so a changed password file takes effect at the next run. It never
+// drops anything. Two runs at the same moment wait for each other.
 func Provision(ctx context.Context, o ProvisionOptions) error {
 	if o.AdminDSN == "" || o.AppPassword == "" || o.BodyPassword == "" {
 		return errors.New("provision: an admin connection string and both passwords are required")
+	}
+	if len(o.AppPassword) < minProvisionPassword || len(o.BodyPassword) < minProvisionPassword {
+		return fmt.Errorf("provision: the role passwords must have at least %d characters (`dexafix secrets init` makes long ones)", minProvisionPassword)
 	}
 	if o.AppPassword == o.BodyPassword {
 		return errors.New("provision: the two roles must have different passwords")
@@ -53,6 +77,19 @@ func Provision(ctx context.Context, o ProvisionOptions) error {
 		return fmt.Errorf("provision: connect as the administrator: %w", err)
 	}
 
+	// One run at a time: the lock belongs to a connection of its own and ends with it.
+	lock, err := admin.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("provision: connect as the administrator: %w", err)
+	}
+	defer lock.Close()
+	if _, err := lock.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, provisionRunLockKey); err != nil {
+		return fmt.Errorf("provision: wait for another run: %w", err)
+	}
+
+	if err := ensureRole(ctx, admin, ProvisionOwnerRole, ""); err != nil {
+		return err
+	}
 	for _, r := range []struct{ role, password string }{
 		{ProvisionAppRole, o.AppPassword},
 		{ProvisionBodyRole, o.BodyPassword},
@@ -66,10 +103,24 @@ func Provision(ctx context.Context, o ProvisionOptions) error {
 	if err := admin.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1)`, ProvisionDatabase).Scan(&exists); err != nil {
 		return fmt.Errorf("provision: look for the database: %w", err)
 	}
+	database, owner := quoteIdent(ProvisionDatabase), quoteIdent(ProvisionOwnerRole)
 	if !exists {
-		// CREATE DATABASE cannot run in a transaction and takes no placeholders; both names are constants.
-		if _, err := admin.ExecContext(ctx, fmt.Sprintf(`CREATE DATABASE %s OWNER %s`, quoteIdent(ProvisionDatabase), quoteIdent(ProvisionAppRole))); err != nil {
+		// CREATE DATABASE cannot run in a transaction and takes no placeholders; the names are constants.
+		if _, err := admin.ExecContext(ctx, fmt.Sprintf(`CREATE DATABASE %s OWNER %s`, database, owner)); err != nil {
 			return fmt.Errorf("provision: create the database: %w", err)
+		}
+	}
+	// The owner is set on every run: a database made by an earlier version belonged to the api's role,
+	// which could then lock the other role out, change the database's settings or drop it.
+	for _, stmt := range []string{
+		fmt.Sprintf(`ALTER DATABASE %s OWNER TO %s`, database, owner),
+		// Connecting is a right of PUBLIC by default, so any role could connect, and the api's role as
+		// owner could take it away from the others. It is granted to the two roles only.
+		fmt.Sprintf(`REVOKE ALL ON DATABASE %s FROM PUBLIC`, database),
+		fmt.Sprintf(`GRANT CONNECT, TEMPORARY ON DATABASE %s TO %s, %s`, database, quoteIdent(ProvisionAppRole), quoteIdent(ProvisionBodyRole)),
+	} {
+		if _, err := admin.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("provision: %s: %w", stmt, err)
 		}
 	}
 
@@ -86,9 +137,9 @@ func Provision(ctx context.Context, o ProvisionOptions) error {
 		fmt.Sprintf(`CREATE SCHEMA IF NOT EXISTS %s AUTHORIZATION %s`, quoteIdent(ProvisionBodySchema), quoteIdent(ProvisionBodyRole)),
 		fmt.Sprintf(`ALTER SCHEMA %s OWNER TO %s`, quoteIdent(ProvisionBodySchema), quoteIdent(ProvisionBodyRole)),
 		fmt.Sprintf(`ALTER ROLE %s SET search_path = %s`, quoteIdent(ProvisionBodyRole), quoteIdent(ProvisionBodySchema)),
-		// Nobody but the owner of the database (the api's role) may use the schema "public": without this
-		// every role may look at its tables' names and create objects there. The grant keeps the api's
-		// role working on servers older than 15, where "public" is not owned by the database owner.
+		// Nobody but the owner of the database may use the schema "public": without this every role may
+		// look at its tables' names and create objects there. The grant gives the api's role the use of
+		// it (the owner of the database is a role that cannot log in).
 		`REVOKE ALL ON SCHEMA public FROM PUBLIC`,
 		fmt.Sprintf(`GRANT ALL ON SCHEMA public TO %s`, quoteIdent(ProvisionAppRole)),
 		fmt.Sprintf(`REVOKE ALL ON SCHEMA %s FROM PUBLIC`, quoteIdent(ProvisionBodySchema)),
@@ -100,8 +151,15 @@ func Provision(ctx context.Context, o ProvisionOptions) error {
 	return tx.Commit()
 }
 
-// ensureRole creates a login role or, when it exists, sets its password again. The statement is built
-// by the server with format(%I, %L), so no password or name is ever quoted by hand.
+// roleAttributes are set on every role Provision handles, whatever an earlier version or an image
+// gave it: none of them is a superuser, may make databases or roles, replicate or bypass row security.
+const roleAttributes = `NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`
+
+// ensureRole creates a role or, when it exists, brings it back to what Provision wants: the
+// attributes above, no memberships, and (for a role that logs in) the password again. An empty
+// password makes a role that cannot log in. The statement is built by the server with format(%I,
+// %L), so no name or password is ever quoted by hand, and a password goes over as a SCRAM-SHA-256
+// verifier, so it is not in the statement that log_statement=ddl or pg_stat_statements records.
 func ensureRole(ctx context.Context, db *sql.DB, role, password string) error {
 	var exists bool
 	if err := db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = $1)`, role).Scan(&exists); err != nil {
@@ -111,15 +169,94 @@ func ensureRole(ctx context.Context, db *sql.DB, role, password string) error {
 	if exists {
 		verb = "ALTER"
 	}
+	login := "NOLOGIN"
+	if password != "" {
+		login = "LOGIN"
+	}
 	var stmt string
-	if err := db.QueryRowContext(ctx, `SELECT format($1::text || ' ROLE %I LOGIN PASSWORD %L', $2::text, $3::text)`, verb, role, password).Scan(&stmt); err != nil {
-		return fmt.Errorf("provision: prepare role %s: %w", role, err)
+	if password == "" {
+		if err := db.QueryRowContext(ctx, `SELECT format($1::text || ' ROLE %I '||$2::text||' '||$3::text, $4::text)`, verb, login, roleAttributes, role).Scan(&stmt); err != nil {
+			return fmt.Errorf("provision: prepare role %s: %w", role, err)
+		}
+	} else {
+		verifier, err := scramVerifier(password)
+		if err != nil {
+			return err
+		}
+		if err := db.QueryRowContext(ctx, `SELECT format($1::text || ' ROLE %I '||$2::text||' '||$3::text||' PASSWORD %L', $4::text, $5::text)`,
+			verb, login, roleAttributes, role, verifier).Scan(&stmt); err != nil {
+			return fmt.Errorf("provision: prepare role %s: %w", role, err)
+		}
 	}
 	if _, err := db.ExecContext(ctx, stmt); err != nil {
-		// The statement holds the password, so it is not part of the message (the server's error is not).
+		// The statement can hold the password, so it is not part of the message (the server's error is not).
 		return fmt.Errorf("provision: %s role %s: %w", verb, role, err)
 	}
+	return dropMemberships(ctx, db, role)
+}
+
+// dropMemberships takes the role out of every role it is a member of (pg_read_all_data, a
+// superuser's role): a role that Provision handles is only what it is here.
+func dropMemberships(ctx context.Context, db *sql.DB, role string) error {
+	rows, err := db.QueryContext(ctx, `SELECT g.rolname FROM pg_auth_members m JOIN pg_roles g ON g.oid = m.roleid JOIN pg_roles u ON u.oid = m.member WHERE u.rolname = $1`, role)
+	if err != nil {
+		return fmt.Errorf("provision: look for the memberships of role %s: %w", role, err)
+	}
+	var groups []string
+	for rows.Next() {
+		var g string
+		if err := rows.Scan(&g); err != nil {
+			rows.Close()
+			return fmt.Errorf("provision: look for the memberships of role %s: %w", role, err)
+		}
+		groups = append(groups, g)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("provision: look for the memberships of role %s: %w", role, err)
+	}
+	rows.Close()
+	for _, g := range groups {
+		var stmt string
+		if err := db.QueryRowContext(ctx, `SELECT format('REVOKE %I FROM %I', $1::text, $2::text)`, g, role).Scan(&stmt); err != nil {
+			return fmt.Errorf("provision: prepare the removal of role %s from %s: %w", role, g, err)
+		}
+		if _, err := db.ExecContext(ctx, stmt); err != nil {
+			return fmt.Errorf("provision: remove role %s from %s: %w", role, g, err)
+		}
+	}
 	return nil
+}
+
+// scramIterations is PostgreSQL's default work factor for SCRAM-SHA-256 (scram_iterations).
+const scramIterations = 4096
+
+// scramVerifier makes the PostgreSQL SCRAM-SHA-256 verifier of a password: the server stores it as
+// it is, so the password itself is never in a statement. A password with characters beyond ASCII
+// is sent as it is instead and the server does the normalisation (SASLprep) that the verifier
+// would need.
+func scramVerifier(password string) (string, error) {
+	for _, r := range password {
+		if r < 0x20 || r > 0x7e {
+			return password, nil
+		}
+	}
+	salt := make([]byte, 16)
+	if _, err := rand.Read(salt); err != nil {
+		return "", fmt.Errorf("provision: make a salt: %w", err)
+	}
+	salted, err := pbkdf2.Key(sha256.New, password, salt, scramIterations, sha256.Size)
+	if err != nil {
+		return "", fmt.Errorf("provision: derive the key: %w", err)
+	}
+	mac := func(key []byte, msg string) []byte {
+		h := hmac.New(sha256.New, key)
+		h.Write([]byte(msg))
+		return h.Sum(nil)
+	}
+	stored := sha256.Sum256(mac(salted, "Client Key"))
+	enc := base64.StdEncoding.EncodeToString
+	return fmt.Sprintf("SCRAM-SHA-256$%d:%s$%s:%s", scramIterations, enc(salt), enc(stored[:]), enc(mac(salted, "Server Key"))), nil
 }
 
 // openPG opens a connection pool from a PostgreSQL connection string (URL or key/value form),

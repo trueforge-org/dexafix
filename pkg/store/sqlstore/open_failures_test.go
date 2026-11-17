@@ -500,7 +500,7 @@ func TestTheProvisionHelpersThatNeedNoServer(t *testing.T) {
 	}
 	addr := l.Addr().String()
 	l.Close()
-	err = Provision(context.Background(), ProvisionOptions{AdminDSN: "postgres://postgres:x@" + addr + "/postgres?sslmode=disable&connect_timeout=2", AppPassword: "a", BodyPassword: "b"})
+	err = Provision(context.Background(), ProvisionOptions{AdminDSN: "postgres://postgres:x@" + addr + "/postgres?sslmode=disable&connect_timeout=2", AppPassword: "app-password-0123456789", BodyPassword: "body-password-0123456789"})
 	if err == nil || !strings.Contains(err.Error(), "connect as the administrator") {
 		t.Errorf("Provision against nothing: %v", err)
 	}

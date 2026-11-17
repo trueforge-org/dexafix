@@ -100,7 +100,7 @@ administrator's connection string, or run this once as the database owner, with
 your own password:
 
 ```sql
-CREATE ROLE dexafix_body LOGIN PASSWORD '<password>';
+CREATE ROLE dexafix_body LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '<password>';
 CREATE SCHEMA body AUTHORIZATION dexafix_body;
 ALTER ROLE dexafix_body SET search_path = body;
 REVOKE ALL ON SCHEMA public FROM PUBLIC;

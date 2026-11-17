@@ -46,7 +46,7 @@ func shadowDSN(t *testing.T, dsn, setup string) string {
 }
 
 func provisionOptions(dsn string) ProvisionOptions {
-	return ProvisionOptions{AdminDSN: dsn, AppPassword: "fail-app-pw", BodyPassword: "fail-body-pw"}
+	return ProvisionOptions{AdminDSN: dsn, AppPassword: "fail-app-password-0123", BodyPassword: "fail-body-password-0123"}
 }
 
 func TestProvisionReportsWhatTheServerRefuses(t *testing.T) {

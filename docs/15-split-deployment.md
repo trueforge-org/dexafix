@@ -232,14 +232,19 @@ The database image is `ghcr.io/trueforge-org/postgresql` (ContainerForge). It
 runs as uid 568 and keeps its data in `/config/18`, and so do the other images
 of this stack: DexaFix runs as uid 568 too and keeps its data in `/config`. The
 `db-setup` container runs [`dexafix db provision`](05-commands.md) against it,
-so the application never runs as the superuser `postgres`. The api's role
-`dexafix` owns the database; the body service's role `dexafix_body` owns the
-schema `body` and can use nothing else. The image can make no roles from
+so the application never runs as the superuser `postgres`. The database
+belongs to `dexafix_owner`, a role that cannot log in, and only the two roles
+below may connect to it, so a compromised api cannot lock the body service out,
+change the database's settings or drop it. The api's role `dexafix` works in the
+schema `public`; the body service's role `dexafix_body` owns the
+schema `body` and can use nothing else. Neither is a superuser or a member of any
+other role. The image can make no roles from
 environment variables (its `ADDITIONAL_DBS` setting creates databases owned by
 the superuser, and nothing else), and it reads the superuser's password from the
 environment only, so the Compose file exports it from the secret file in a small
 `entrypoint`. `db provision` can be repeated: what exists is kept and the
-passwords are set again, so a failed start is mended by the next `up`, and a
+passwords are set again (a database that an earlier version let `dexafix` own goes to
+`dexafix_owner`, which is all an upgrade needs: run `docker compose up -d` again), so a failed start is mended by the next `up`, and a
 password you changed in `./secrets` takes effect there too.
 
 The Docker daemon may run on another host than your shell (Docker Desktop with a
