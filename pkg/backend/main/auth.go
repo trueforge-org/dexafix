@@ -40,6 +40,28 @@ const (
 
 type userKey struct{}
 
+// authMethod is how the request proved who sent it.
+type authMethod int
+
+const (
+	methodSession authMethod = iota + 1 // the session cookie of a signed-in browser
+	methodToken                         // an access token, an ID token or Basic credentials, on the API
+)
+
+type methodKey struct{}
+
+// authMethodOf says how the request was authenticated; zero when it was not.
+func authMethodOf(r *http.Request) authMethod {
+	m, _ := r.Context().Value(methodKey{}).(authMethod)
+	return m
+}
+
+// authStep is one way of proving who someone is, and what it is called.
+type authStep struct {
+	method authMethod
+	auth   authenticator
+}
+
 // currentUser returns the authenticated user of the request, or nil.
 func currentUser(r *http.Request) *models.User {
 	u, _ := r.Context().Value(userKey{}).(*models.User)
@@ -64,13 +86,14 @@ func (s *Backend) withAuth(next http.Handler) http.Handler {
 			return
 		}
 		for _, a := range s.authChain {
-			u, ok, err := a(r)
+			u, ok, err := a.auth(r)
 			if err != nil {
 				log.Error().Err(err).Msg("authentication failed")
 				continue
 			}
 			if ok {
-				r = r.WithContext(context.WithValue(r.Context(), userKey{}, &u))
+				ctx := context.WithValue(r.Context(), userKey{}, &u)
+				r = r.WithContext(context.WithValue(ctx, methodKey{}, a.method))
 				break
 			}
 		}

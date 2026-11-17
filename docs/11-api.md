@@ -13,6 +13,11 @@ Every request must be authenticated, except `GET /healthz` and static files.
 Responses are 401 when the request is not authenticated, and 403 when the
 user's role is not enough. See [Authentication](#authentication).
 
+The administrator endpoints (`GET` and `POST /users`, `GET /audit`) do not take the
+session cookie of an administrator who has two-step verification on: the Admin pages
+ask that administrator for a code again, and the cookie that proves it never reaches
+the API. Such an administrator uses an access token (403 otherwise).
+
 | Method | Path                            | Description                                                                                                                                             |
 | ------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/users`                        | List users. Administrators only. Each has `username`, `first_name` and `last_name`; `name` repeats the username for scripts written for v0.0.1. |

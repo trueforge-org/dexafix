@@ -77,7 +77,7 @@ type Backend struct {
 	live       atomic.Pointer[liveSettings] // administrator settings in force, see serversettings.go
 	onSettings func()                       // called after the settings in force change
 
-	authChain      []authenticator
+	authChain      []authStep
 	cookieKey      []byte
 	httpClient     *http.Client
 	serviceSecrets [][32]byte    // accepted by the internal API, see internal.go
@@ -159,7 +159,7 @@ func NewBackend(st store.Store, opts ...Option) (*Backend, error) {
 	// The providers that ship with the program; their settings are read below.
 	s.addWorkerProvider(withingsProvider())
 	s.addWorkerProvider(strengthLevelProviderSpec())
-	s.authChain = []authenticator{s.authSession, s.authBearer, s.authBasic}
+	s.authChain = []authStep{{methodSession, s.authSession}, {methodToken, s.authBearer}, {methodToken, s.authBasic}}
 	ctx := context.Background()
 	var err error
 	if s.cookieKey, err = s.loadCookieKey(ctx); err != nil {

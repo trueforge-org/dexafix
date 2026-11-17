@@ -107,6 +107,21 @@ func (s *Backend) apiAdmin(h http.HandlerFunc) http.HandlerFunc {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "administrator role required"})
 			return
 		}
+		// The Admin pages ask an administrator with two-step verification for a code again, so that a
+		// stolen session cookie is not enough. That proof is a cookie for /admin only and never
+		// reaches this API, so here the session cookie of such an administrator is refused: use an
+		// access token, which has no second step by design.
+		if authMethodOf(r) == methodSession {
+			has, err := s.hasTwoFactor(r.Context(), u.ID)
+			if err != nil {
+				apiError(w, err)
+				return
+			}
+			if has {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "an administrator with two-step verification uses an access token here"})
+				return
+			}
+		}
 		h(w, r)
 	}
 }

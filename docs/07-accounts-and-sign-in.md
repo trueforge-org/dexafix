@@ -55,7 +55,8 @@ addresses or login names.
 
 Administrators see the latest 100 events on the Admin page and can read the
 whole log at `GET /api/v1/audit` (`limit`, `before_id` and `user_id` query
-parameters). Everyone sees the latest events about their own account in
+parameters; an administrator with two-step verification on uses an access token
+there, because a session cookie is not enough for the Admin functions). Everyone sees the latest events about their own account in
 Settings, and at `GET /api/v1/users/{id}/audit`.
 
 Events are deleted after the **Keep the audit log for N days** setting on the

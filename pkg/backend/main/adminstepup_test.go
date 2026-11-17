@@ -1,6 +1,7 @@
 package mainbackend
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strings"
@@ -177,5 +178,66 @@ func TestAdminStepUpDoesNotBlockAccessTokens(t *testing.T) {
 
 	if code, _ := apiCall(t, noRedirectClient(), "GET", ts.URL+"/api/v1/audit", "", bearer(token)); code != 200 {
 		t.Fatalf("admin API with an access token and two-step verification: %d, want 200", code)
+	}
+}
+
+// The Admin pages ask an administrator with two-step verification for a code again. The proof is a
+// cookie for /admin only, so the JSON API cannot see it: a session cookie must not stand in for it
+// there, or a stolen cookie would reach everything the Admin pages protect.
+func TestTheAdminAPIRefusesTheSessionOfAnAdministratorWithTwoStepVerification(t *testing.T) {
+	ts, root, _ := newAuthServer(t)
+	srv := serverOf(ts)
+	signup(t, ts, root, "root") // user 1, administrator
+	session := sessionOfClient(t, root)
+	cookie := http.Header{"Cookie": {session.Name + "=" + session.Value}}
+	calls := map[string]func() int{
+		"list users": func() int {
+			c, _ := apiCall(t, noRedirectClient(), "GET", ts.URL+"/api/v1/users", "", cookie)
+			return c
+		},
+		"audit log": func() int {
+			c, _ := apiCall(t, noRedirectClient(), "GET", ts.URL+"/api/v1/audit", "", cookie)
+			return c
+		},
+		"add a user": func() int {
+			c, _ := apiCall(t, noRedirectClient(), "POST", ts.URL+"/api/v1/users", `{"username":"dave","email":"dave@example.com"}`, cookie)
+			return c
+		},
+	}
+	// Without two-step verification the session is as good here as on the Admin pages.
+	for name, call := range calls {
+		if name != "add a user" {
+			if code := call(); code != 200 {
+				t.Errorf("%s without two-step verification: %d, want 200", name, code)
+			}
+		}
+	}
+	tfEnable(t, srv, 1)
+	for name, call := range calls {
+		if code := call(); code != http.StatusForbidden {
+			t.Errorf("%s with the session of an administrator with two-step verification: %d, want 403", name, code)
+		}
+	}
+	if users, err := srv.store.ListUsers(context.Background()); err != nil || len(users) != 1 {
+		t.Errorf("a user was added: %d %v", len(users), err)
+	}
+	// Their own data stays reachable with the session, and an access token still works.
+	if code, _ := apiCall(t, noRedirectClient(), "GET", ts.URL+"/api/v1/users/1/settings", "", cookie); code != 200 {
+		t.Errorf("own settings with the session: %d, want 200", code)
+	}
+	token := createPAT(t, ts, root, 1, url.Values{"name": {"script"}, "expires": {"never"}})
+	if code, _ := apiCall(t, noRedirectClient(), "GET", ts.URL+"/api/v1/users", "", bearer(token)); code != 200 {
+		t.Errorf("access token: %d, want 200", code)
+	}
+}
+
+func TestTheAdminAPIAnswersWhenTheSecondStepCannotBeLookedUp(t *testing.T) {
+	ts, root, st := newAuthServer(t)
+	signup(t, ts, root, "root")
+	session := sessionOfClient(t, root)
+	breakTable(t, st, "user_totp")
+	cookie := http.Header{"Cookie": {session.Name + "=" + session.Value}}
+	if code, _ := apiCall(t, noRedirectClient(), "GET", ts.URL+"/api/v1/users", "", cookie); code != http.StatusInternalServerError {
+		t.Errorf("status %d, want 500", code)
 	}
 }
