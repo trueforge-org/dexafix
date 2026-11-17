@@ -22,6 +22,7 @@ import (
 	bodybackend "github.com/trueforge-org/dexafix/pkg/backend/body"
 	mainbackend "github.com/trueforge-org/dexafix/pkg/backend/main"
 	"github.com/trueforge-org/dexafix/pkg/store/sqlstore"
+	"github.com/trueforge-org/dexafix/pkg/workers/builtin"
 )
 
 // restoreFlag puts one flag (a *pflag.Flag, which this package does not import directly) back to
@@ -311,7 +312,9 @@ func testBackend(t *testing.T) (ts *httptest.Server, serviceSecret, workerSecret
 	t.Cleanup(b.Close)
 	serviceSecret, workerSecret = strings.Repeat("s", 40), strings.Repeat("w", 40)
 	b.SetServiceSecrets(serviceSecret)
-	b.SetWorkerSecrets(workerSecret)
+	if err := b.SetWorkerSecrets(mainbackend.WorkerSecrets{Providers: builtin.Names(), Secrets: []string{workerSecret}}); err != nil {
+		t.Fatal(err)
+	}
 	ts = httptest.NewServer(b.InternalHandler())
 	t.Cleanup(ts.Close)
 	return ts, serviceSecret, workerSecret

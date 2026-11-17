@@ -84,7 +84,10 @@ func newStack(st store.Store, wo builtin.Options, opts ...Option) (*Server, erro
 	secret := testRandomHex(32)
 	b.SetServiceSecrets(secret)
 	workerSecret := testRandomHex(32)
-	b.SetWorkerSecrets(workerSecret)
+	if err := setAllWorkerSecrets(b, workerSecret); err != nil {
+		b.Close()
+		return nil, err
+	}
 	client, err := apiclient.New("http://backend.internal", &http.Client{Transport: apiclient.InProcess(b.InternalHandler())}, secret)
 	if err != nil {
 		b.Close()
@@ -160,7 +163,7 @@ func newSplitServer(t *testing.T, st store.Store, wo builtin.Options) *httptest.
 	const secret = "split-test-secret-0123456789abcdef0123"
 	const workerSecret = "split-test-worker-secret-0123456789abcdef"
 	b.SetServiceSecrets(secret)
-	b.SetWorkerSecrets(workerSecret)
+	allWorkerSecrets(t, b, workerSecret)
 	b.DisableInternalBudget() // the tests are not a flood
 	internal := httptest.NewServer(b.InternalHandler())
 	t.Cleanup(internal.Close)

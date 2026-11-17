@@ -208,12 +208,10 @@ API and another the internal one on the same database.`,
 				return err
 			}
 		}
-		var workerSecrets []string
-		if path, _ := cmd.Flags().GetString("worker-secret-file"); path != "" {
-			var err error
-			if workerSecrets, err = loadWorkerSecrets(path); err != nil {
-				return err
-			}
+		entries, _ := cmd.Flags().GetStringSlice("worker-secret-file")
+		workerGroups, workerSecrets, err := loadWorkerSecretGroups(entries)
+		if err != nil {
+			return err
 		}
 		// The body service is called over the network when --body-url is set; otherwise it runs
 		// inside this process, on the same database.
@@ -311,8 +309,10 @@ API and another the internal one on the same database.`,
 			}
 			servers = append(servers, pub)
 		}
-		if len(workerSecrets) > 0 {
-			srv.SetWorkerSecrets(workerSecrets...)
+		if len(workerGroups) > 0 {
+			if err := srv.SetWorkerSecrets(workerGroups...); err != nil {
+				return err
+			}
 		}
 		if internal != "" {
 			srv.SetServiceSecrets(secrets...)
@@ -355,7 +355,7 @@ func init() {
 	serveAPICmd.Flags().String("internal-listen", envOr("DEXAFIX_INTERNAL_LISTEN", ":8081"), "address of the internal API for the web frontend (empty: off); keep it on a private network")
 	serveAPICmd.Flags().Bool("maintenance", envOr("DEXAFIX_MAINTENANCE", "true") != "false", "run the maintenance loop (audit log purge, self-signed certificate renewal); turn it off on all but one api process")
 	addServiceSecretFlag(serveAPICmd)
-	addWorkerSecretFlag(serveAPICmd, "file with the secret the api process and its workers share, one per line (the first is the one workers send); create one with `dexafix secrets worker-secret`; it must differ from the service secret")
+	addWorkerSecretFilesFlag(serveAPICmd)
 	addInternalTLSFlags(serveAPICmd)
 	addBodyClientFlags(serveAPICmd)
 	addDBFlags(serveAPICmd)

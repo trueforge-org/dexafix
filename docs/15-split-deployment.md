@@ -209,7 +209,7 @@ What `init` makes, and where it keeps it:
 | --- | --- | --- |
 | `./secrets/` on the host | The database passwords, the connection strings, the Valkey password and the two encryption keys (`encryption_key`, `body_encryption_key`) | Never: a file that exists is kept |
 | Volume `secrets-api` | The api's connection string and encryption key, the service, worker and body secrets, the body token signing key, the Valkey URL, the api's certificates | The secrets and the key are kept; the certificates are new at every run |
-| Volumes `secrets-web`, `secrets-worker`, `secrets-body` | Only what that container needs: its shared secret and its certificates (the body service also gets its connection string and encryption key, and the public half of the signing key) | As above |
+| Volumes `secrets-web`, `secrets-worker-withings`, `secrets-worker-strengthlevel`, `secrets-body` | Only what that container needs: its shared secret and its certificates (the body service also gets its connection string and encryption key, and the public half of the signing key) | As above |
 | Volumes `secrets-db`, `secrets-dbsetup`, `secrets-valkey` | The superuser's password (the database), the administrator's connection string and the two role passwords (`db-setup`), the Valkey password | They follow the files in `./secrets` |
 
 **Back up `./secrets/encryption_key` and `./secrets/body_encryption_key`

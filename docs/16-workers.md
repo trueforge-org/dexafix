@@ -24,20 +24,41 @@ to exactly one worker, so you can run as many workers as you like.
 
 ## Start a worker
 
-Create a worker secret. It must differ from the service secret, because the two
-open different doors. `serve api` refuses to start when they are equal.
+Create one worker secret **per provider**. A worker secret opens the jobs of its
+provider only: a worker that is compromised, or a secret that leaks, cannot
+lease the jobs of another provider, and so cannot read the credentials users
+gave to it. Every secret must differ from the others and from the service
+secret, because they open different doors. `serve api` refuses to start when two
+are equal.
 
 ```bash
-dexafix secrets worker-secret > worker.secret && chmod 600 worker.secret
+dexafix secrets worker-secret > withings.secret && chmod 600 withings.secret
+dexafix secrets worker-secret > strengthlevel.secret && chmod 600 strengthlevel.secret
 ```
 
-Give the same file to the api process and to every worker:
+Give the api process every file, each with the provider it opens, and give each
+worker only the file of its provider:
 
 ```bash
-dexafix serve api --worker-secret-file worker.secret ...
+dexafix serve api \
+  --worker-secret-file withings=withings.secret \
+  --worker-secret-file strengthlevel=strengthlevel.secret ...
 dexafix serve worker --backend-url http://api:8081 \
-  --worker-secret-file worker.secret --providers withings
+  --worker-secret-file withings.secret --providers withings
 ```
+
+A worker that asks for kinds of a provider its secret does not open gets the same
+answer as for a kind that does not exist. The api process records an audit entry
+("Job handed to a worker") each time it hands a worker a job, which carries the
+user's credentials, with the kind and the worker's name.
+
+**Upgrading from a single worker secret:** `--worker-secret-file` of `serve api`
+now takes `PROVIDERS=FILE` entries, and `DEXAFIX_WORKER_SECRET_FILE` of the api
+process is replaced by `DEXAFIX_WORKER_SECRET_FILES` (entries separated by `;`).
+In the Compose deployment, run `docker compose pull && docker compose up -d`:
+`init` makes `worker_secret_withings` and `worker_secret_strengthlevel`, and each
+worker container gets its own secrets volume. The old `worker_secret` file and the
+`secrets-worker` volume are no longer used and can be removed.
 
 `--backend-url` is the internal address of the api process, the same one web
 uses. Workers use the internal listener and, if you set it up,
@@ -55,7 +76,7 @@ secret, and gives them to the worker containers only. See
 | Flag                   | Environment variable          | Default | Description                                                              |
 | ---------------------- | ----------------------------- | ------- | ------------------------------------------------------------------------ |
 | `--backend-url`        | `DEXAFIX_BACKEND_URL`         | empty   | Required. Internal address of the api process.                           |
-| `--worker-secret-file` | `DEXAFIX_WORKER_SECRET_FILE`  | empty   | Required. The secret shared with the api process, one per line.          |
+| `--worker-secret-file` | `DEXAFIX_WORKER_SECRET_FILE`  | empty   | Required. The secret of this worker's provider, one per line (the first is sent). On `serve api` it is `PROVIDERS=FILE`, repeatable, and the variable is `DEXAFIX_WORKER_SECRET_FILES` (separated by `;`). |
 | `--providers`          | `DEXAFIX_WORKER_PROVIDERS`    | empty   | Comma-separated: `strengthlevel`, `withings`. Empty runs all.            |
 | `--concurrency`        | `DEXAFIX_WORKER_CONCURRENCY`  | `2`     | Jobs this process runs at once, from 1 to 64.                            |
 | `--worker-id`          | `DEXAFIX_WORKER_ID`           | random  | Name of this worker on the Admin page.                                   |

@@ -10,6 +10,9 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
+
+	mainbackend "github.com/trueforge-org/dexafix/pkg/backend/main"
+	"github.com/trueforge-org/dexafix/pkg/workers/builtin"
 )
 
 // The web (frontend) and api (backend) processes prove to each other with a shared secret in a
@@ -110,6 +113,57 @@ var workerSecretCmd = &cobra.Command{
 
 func addWorkerSecretFlag(c *cobra.Command, help string) {
 	c.Flags().String("worker-secret-file", envOr("DEXAFIX_WORKER_SECRET_FILE", ""), help)
+}
+
+// addWorkerSecretFilesFlag is the api process's side: one secret file per provider, so that the
+// secret of one provider's workers opens the jobs of that provider only.
+func addWorkerSecretFilesFlag(c *cobra.Command) {
+	var def []string
+	if v := os.Getenv("DEXAFIX_WORKER_SECRET_FILES"); v != "" {
+		def = strings.Split(v, ";")
+	}
+	c.Flags().StringSlice("worker-secret-file", def,
+		"PROVIDERS=FILE: the file with the secret of the workers of those providers, one per line (the first is the one they send); "+
+			"repeat it for each provider (withings=/run/secrets/withings,strengthlevel=...), or list providers with + (a+b=FILE) only if they must share a worker; "+
+			"create one with `dexafix secrets worker-secret`. Every secret must differ from the others and from the service secret")
+}
+
+// loadWorkerSecretGroups reads the PROVIDERS=FILE entries of --worker-secret-file. A secret opens
+// the providers named in its entry and nothing else, and no secret may serve two entries.
+func loadWorkerSecretGroups(entries []string) ([]mainbackend.WorkerSecrets, []string, error) {
+	known := map[string]bool{}
+	for _, n := range builtin.Names() {
+		known[n] = true
+	}
+	var groups []mainbackend.WorkerSecrets
+	var all []string
+	seen := map[string]bool{}
+	for _, e := range entries {
+		names, path, ok := strings.Cut(e, "=")
+		if !ok || names == "" || path == "" {
+			return nil, nil, fmt.Errorf("--worker-secret-file %q: write PROVIDERS=FILE, such as withings=/run/secrets/worker_withings (a worker secret opens only the providers named)", e)
+		}
+		var providers []string
+		for _, n := range strings.Split(names, "+") {
+			if n = strings.TrimSpace(n); !known[n] {
+				return nil, nil, fmt.Errorf("--worker-secret-file %q: unknown worker provider %q (known: %s)", e, n, strings.Join(builtin.Names(), ", "))
+			}
+			providers = append(providers, n)
+		}
+		secrets, err := loadWorkerSecrets(path)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, sec := range secrets {
+			if seen[sec] {
+				return nil, nil, fmt.Errorf("--worker-secret-file %q: this secret is already used for other providers; each provider's workers need a secret of their own", e)
+			}
+			seen[sec] = true
+		}
+		groups = append(groups, mainbackend.WorkerSecrets{Providers: providers, Secrets: secrets})
+		all = append(all, secrets...)
+	}
+	return groups, all, nil
 }
 
 func init() {

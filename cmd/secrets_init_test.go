@@ -17,11 +17,11 @@ func testInit(t *testing.T) (initOptions, map[string]string) {
 	t.Helper()
 	root := t.TempDir()
 	dirs := map[string]string{}
-	for _, n := range []string{"host", "api", "web", "worker", "body", "db", "dbsetup", "valkey"} {
+	for _, n := range []string{"host", "api", "web", "worker", "workersl", "body", "db", "dbsetup", "valkey"} {
 		dirs[n] = filepath.Join(root, n)
 	}
 	return initOptions{
-		hostDir: dirs["host"], apiDir: dirs["api"], webDir: dirs["web"], workerDir: dirs["worker"], bodyDir: dirs["body"],
+		hostDir: dirs["host"], apiDir: dirs["api"], webDir: dirs["web"], workerDirs: map[string]string{"withings": dirs["worker"], "strengthlevel": dirs["workersl"]}, bodyDir: dirs["body"],
 		dbDir: dirs["db"], dbsetupDir: dirs["dbsetup"], valkeyDir: dirs["valkey"],
 		dbHost: "db", valkeyHost: "valkey", apiNames: []string{"api"}, bodyNames: []string{"body"}, validity: 30 * 24 * time.Hour, uid: -1, gid: -1,
 	}, dirs
@@ -148,12 +148,13 @@ func TestSecretsInitCreatesEverything(t *testing.T) {
 	}
 	// The two doors that two processes share carry the same secret in both places.
 	if readFile(t, d["api"], fileServiceSecret) != readFile(t, d["web"], fileServiceSecret) ||
-		readFile(t, d["api"], fileWorkerSecret) != readFile(t, d["worker"], fileWorkerSecret) ||
+		readFile(t, d["api"], fileWorkerSecret+"_withings") != readFile(t, d["worker"], fileWorkerSecret) ||
+		readFile(t, d["api"], fileWorkerSecret+"_strengthlevel") != readFile(t, d["workersl"], fileWorkerSecret) ||
 		readFile(t, d["api"], fileBodySecret) != readFile(t, d["body"], fileBodySecret) {
 		t.Error("a shared secret differs between its two processes")
 	}
-	if a, b, c := readFile(t, d["api"], fileServiceSecret), readFile(t, d["api"], fileWorkerSecret), readFile(t, d["api"], fileBodySecret); a == b || b == c || a == c {
-		t.Error("the three doors must have three different secrets")
+	if a, b, c, e := readFile(t, d["api"], fileServiceSecret), readFile(t, d["api"], fileWorkerSecret+"_withings"), readFile(t, d["api"], fileBodySecret), readFile(t, d["api"], fileWorkerSecret+"_strengthlevel"); a == b || b == c || a == c || e == a || e == b || e == c {
+		t.Error("every door, and each provider's workers, must have a secret of their own")
 	}
 	// Isolation: each process gets only what it needs.
 	for dir, banned := range map[string][]string{
@@ -237,8 +238,8 @@ func TestSecretsInitKeepsSecretsAndRenewsCertificates(t *testing.T) {
 		before["host/"+n] = readFile(t, d["host"], n)
 	}
 	for dir, names := range map[string][]string{
-		"api": {fileServiceSecret, fileWorkerSecret, fileBodySecret, fileBodyTokenKey, fileValkeyURL},
-		"web": {fileServiceSecret}, "worker": {fileWorkerSecret}, "body": {fileBodySecret, fileBodyTokenPub},
+		"api": {fileServiceSecret, fileWorkerSecret + "_withings", fileWorkerSecret + "_strengthlevel", fileBodySecret, fileBodyTokenKey, fileValkeyURL},
+		"web": {fileServiceSecret}, "worker": {fileWorkerSecret}, "workersl": {fileWorkerSecret}, "body": {fileBodySecret, fileBodyTokenPub},
 	} {
 		for _, n := range names {
 			before[dir+"/"+n] = readFile(t, d[dir], n)
@@ -299,9 +300,33 @@ func TestSecretsInitRefusesBadInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	same := readFile(t, d["api"], fileServiceSecret) + "\n"
-	replaceFile(t, filepath.Join(d["api"], fileWorkerSecret), same, 0o400)
+	replaceFile(t, filepath.Join(d["api"], fileWorkerSecret+"_withings"), same, 0o400)
 	if err := o.run(); err == nil || !strings.Contains(err.Error(), "differ") {
 		t.Errorf("equal secrets must be refused, got %v", err)
+	}
+	// So are two providers' workers with one secret: one compromised worker would open both.
+	o, d = testInit(t)
+	if err := o.run(); err != nil {
+		t.Fatal(err)
+	}
+	other := readFile(t, d["api"], fileWorkerSecret+"_withings") + "\n"
+	replaceFile(t, filepath.Join(d["api"], fileWorkerSecret+"_strengthlevel"), other, 0o400)
+	if err := o.run(); err == nil || !strings.Contains(err.Error(), "differ") {
+		t.Errorf("one secret for two providers must be refused, got %v", err)
+	}
+	// The service and body secrets must differ too.
+	o, d = testInit(t)
+	if err := o.run(); err != nil {
+		t.Fatal(err)
+	}
+	replaceFile(t, filepath.Join(d["api"], fileBodySecret), readFile(t, d["api"], fileServiceSecret)+"\n", 0o400)
+	if err := o.run(); err == nil || !strings.Contains(err.Error(), "differ") {
+		t.Errorf("service and body secrets that are equal must be refused, got %v", err)
+	}
+	for _, bad := range [][]string{{"withings"}, {"withings="}, {"nosuch=/x"}, {"withings=/a", "withings=/b"}} {
+		if _, err := parseWorkerDirs(bad); err == nil {
+			t.Errorf("--worker-dir %v must be refused", bad)
+		}
 	}
 	for _, bad := range []string{"x", "568:x", "-1"} {
 		if _, _, err := parseOwner(bad); err == nil {

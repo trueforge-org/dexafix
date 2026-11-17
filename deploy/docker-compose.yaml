@@ -174,7 +174,8 @@ services:
       - --host-dir=/secrets/host
       - --api-dir=/secrets/api
       - --web-dir=/secrets/web
-      - --worker-dir=/secrets/worker
+      - --worker-dir=withings=/secrets/worker-withings
+      - --worker-dir=strengthlevel=/secrets/worker-strengthlevel
       - --body-dir=/secrets/body
       - --db-dir=/secrets/db
       - --dbsetup-dir=/secrets/dbsetup
@@ -184,7 +185,8 @@ services:
       - ./secrets:/secrets/host
       - secrets-api:/secrets/api
       - secrets-web:/secrets/web
-      - secrets-worker:/secrets/worker
+      - secrets-worker-withings:/secrets/worker-withings
+      - secrets-worker-strengthlevel:/secrets/worker-strengthlevel
       - secrets-body:/secrets/body
       - secrets-db:/secrets/db
       - secrets-dbsetup:/secrets/dbsetup
@@ -284,7 +286,8 @@ services:
       DEXAFIX_ENCRYPTION_KEY_FILE: /secrets/api/encryption_key
       DEXAFIX_VALKEY_URL_FILE: /secrets/api/valkey_url
       DEXAFIX_SERVICE_SECRET_FILE: /secrets/api/service_secret
-      DEXAFIX_WORKER_SECRET_FILE: /secrets/api/worker_secret
+      # One secret per provider: the workers of one provider cannot lease the jobs of another.
+      DEXAFIX_WORKER_SECRET_FILES: "withings=/secrets/api/worker_secret_withings;strengthlevel=/secrets/api/worker_secret_strengthlevel"
       DEXAFIX_INTERNAL_LISTEN: ":8081"
       DEXAFIX_HEALTH_LISTEN: "127.0.0.1:8083"
       # Mutual TLS for web and the workers: only a client certificate from init's CA gets in.
@@ -386,7 +389,8 @@ services:
   # gets a user's credentials only inside the job it works on. Which providers a worker runs is
   # chosen here (--providers); everything else (time limits, retries, pauses, priorities) is on the
   # Admin page, under Workers. The workers use the web container's client certificate: it proves the
-  # link, and the worker secret proves the role.
+  # link, and the worker secret proves the role. Each provider has a secret and a secrets volume of
+  # its own: a compromised worker holds only its provider's secret, so it cannot lease another's jobs.
   worker-withings:
     <<: [*hardened, *limits-worker, *logging]
     image: *image
@@ -400,7 +404,7 @@ services:
       DEXAFIX_BACKEND_CLIENT_CERT_FILE: /secrets/worker/mtls_cert
       DEXAFIX_BACKEND_CLIENT_KEY_FILE: /secrets/worker/mtls_key
     volumes:
-      - secrets-worker:/secrets/worker:ro
+      - secrets-worker-withings:/secrets/worker:ro
     healthcheck:
       <<: *health
       test: ["CMD", "/dexafix", "healthcheck", "http://127.0.0.1:8083/readyz"]
@@ -416,7 +420,7 @@ services:
     command: ["serve", "worker", "--providers", "strengthlevel"]
     environment: *worker-env
     volumes:
-      - secrets-worker:/secrets/worker:ro
+      - secrets-worker-strengthlevel:/secrets/worker:ro
     healthcheck:
       <<: *health
       test: ["CMD", "/dexafix", "healthcheck", "http://127.0.0.1:8083/readyz"]
@@ -444,7 +448,8 @@ volumes:
   # Filled by init, one per container, so a container can read only its own secrets.
   secrets-api: {}
   secrets-web: {}
-  secrets-worker: {}
+  secrets-worker-withings: {}
+  secrets-worker-strengthlevel: {}
   secrets-body: {}
   secrets-db: {}
   secrets-dbsetup: {}

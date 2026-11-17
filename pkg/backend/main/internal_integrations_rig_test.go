@@ -71,7 +71,7 @@ func newJobRig(t *testing.T) *jobRig {
 	}
 	t.Cleanup(b.Close)
 	b.SetServiceSecrets("service-secret-0123456789abcdef")
-	b.SetWorkerSecrets(testWorkerSecret)
+	allWorkerSecrets(t, b, testWorkerSecret)
 	srv := httptest.NewServer(b.InternalHandler())
 	t.Cleanup(srv.Close)
 	api, err := apiclient.New(srv.URL, nil, "service-secret-0123456789abcdef")

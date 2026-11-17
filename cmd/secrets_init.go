@@ -17,6 +17,7 @@ import (
 	"github.com/trueforge-org/dexafix/pkg/shared/bodyapi"
 	"github.com/trueforge-org/dexafix/pkg/shared/mtls"
 	"github.com/trueforge-org/dexafix/pkg/shared/must"
+	"github.com/trueforge-org/dexafix/pkg/workers/builtin"
 )
 
 // `dexafix secrets init` makes everything the Compose deployment (deploy/docker-compose.yaml)
@@ -50,7 +51,7 @@ var initEuid = os.Geteuid
 // at them.
 const (
 	fileServiceSecret = "service_secret"
-	fileWorkerSecret  = "worker_secret"
+	fileWorkerSecret  = "worker_secret" // in a worker's directory; "worker_secret_<provider>" in the api directory
 	fileBodySecret    = "body_secret"
 	fileBodyTokenKey  = "body_token_key"
 	fileBodyTokenPub  = "body_token_pub"
@@ -64,8 +65,11 @@ const (
 )
 
 type initOptions struct {
-	hostDir                            string // persistent secrets, to back up
-	apiDir, webDir, workerDir, bodyDir string // one per process; empty skips that process
+	hostDir                 string // persistent secrets, to back up
+	apiDir, webDir, bodyDir string // one per process; empty skips that process
+	// workerDirs holds one directory per provider's workers, so that the workers of one provider
+	// can read the secret of that provider only. A provider without a directory is skipped.
+	workerDirs map[string]string
 	// The containers that are not DexaFix get a directory of their own too, with only what each needs:
 	// the database (its superuser's password), the one-shot db-setup (the administrator's connection
 	// string and the two role passwords) and Valkey (its password).
@@ -75,6 +79,17 @@ type initOptions struct {
 	validity                     time.Duration
 	uid, gid                     int // owner of the files in the process directories; -1 leaves them
 	log                          io.Writer
+}
+
+// workerDirList lists the workers' directories, in a stable order.
+func (o initOptions) workerDirList() []string {
+	var out []string
+	for _, name := range builtin.Names() {
+		if d := o.workerDirs[name]; d != "" {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 func (o initOptions) say(format string, a ...any) {
@@ -233,11 +248,11 @@ func (o initOptions) makeAll() error {
 	if o.hostDir == "" {
 		return errors.New("--host-dir is required: the directory for the passwords and keys you must back up")
 	}
-	others := o.webDir != "" || o.workerDir != "" || o.bodyDir != ""
+	others := o.webDir != "" || len(o.workerDirs) > 0 || o.bodyDir != ""
 	if others && o.apiDir == "" {
 		return errors.New("--api-dir is required with the other process directories: it holds the secrets they share")
 	}
-	for _, d := range []string{o.hostDir, o.apiDir, o.webDir, o.workerDir, o.bodyDir, o.dbDir, o.dbsetupDir, o.valkeyDir} {
+	for _, d := range append([]string{o.hostDir, o.apiDir, o.webDir, o.bodyDir, o.dbDir, o.dbsetupDir, o.valkeyDir}, o.workerDirList()...) {
 		if d == "" {
 			continue
 		}
@@ -327,9 +342,12 @@ func (o initOptions) makeAll() error {
 	if err != nil {
 		return err
 	}
-	worker, err := o.keep(o.apiDir, fileWorkerSecret, false, randomHex)
-	if err != nil {
-		return err
+	// One secret per provider: the workers of a provider get theirs and no other.
+	workers := map[string]string{}
+	for _, name := range builtin.Names() {
+		if workers[name], err = o.keep(o.apiDir, fileWorkerSecret+"_"+name, false, randomHex); err != nil {
+			return err
+		}
 	}
 	bodySecret, err := o.keep(o.apiDir, fileBodySecret, false, randomHex)
 	if err != nil {
@@ -347,13 +365,22 @@ func (o initOptions) makeAll() error {
 	if err := o.put(o.apiDir, fileValkeyURL, fmt.Sprintf("redis://:%s@%s:6379/0", o.hostValue("valkey_password"), o.valkeyHost)); err != nil {
 		return err
 	}
-	if service == worker || service == bodySecret || worker == bodySecret {
+	distinct := map[string]bool{service: true, bodySecret: true}
+	if len(distinct) != 2 {
 		return errors.New("the service, worker and body secrets must all differ: they open different doors; delete the duplicates and run init again")
+	}
+	for _, w := range workers {
+		if distinct[w] {
+			return errors.New("the service, worker and body secrets must all differ, and so must the secrets of two providers' workers: they open different doors; delete the duplicates and run init again")
+		}
+		distinct[w] = true
 	}
 	copies := []struct{ dir, name, value string }{
 		{o.webDir, fileServiceSecret, service},
-		{o.workerDir, fileWorkerSecret, worker},
 		{o.bodyDir, fileBodySecret, bodySecret},
+	}
+	for name, dir := range o.workerDirs {
+		copies = append(copies, struct{ dir, name, value string }{dir, fileWorkerSecret, workers[name]})
 	}
 	for _, c := range copies {
 		if err := o.share(c.dir, c.name, c.value); err != nil {
@@ -382,7 +409,7 @@ func (o initOptions) makeAll() error {
 	}
 	// The web process and the workers share one client certificate: it proves the link, and the
 	// service or worker secret proves the role.
-	for _, d := range []string{o.webDir, o.workerDir} {
+	for _, d := range append([]string{o.webDir}, o.workerDirList()...) {
 		if d != "" {
 			files = append(files, pemFile{d, fileMTLSCA, web.CA}, pemFile{d, fileMTLSCert, web.ClientCert}, pemFile{d, fileMTLSKey, web.ClientKey})
 		}
@@ -436,7 +463,10 @@ mutual TLS certificates.
                  certificates (mtls_*, and body_mtls_* for the link to the body service), and
                  valkey_url (made from valkey_password in --host-dir, for the optional Valkey server)
   --web-dir      service_secret and the web process's client certificate
-  --worker-dir   worker_secret and the same client certificate
+  --worker-dir   PROVIDER=DIR, once for each provider (withings=..., strengthlevel=...): worker_secret
+                 (that provider's own; the api directory holds worker_secret_<provider> for each) and
+                 the same client certificate. Give each provider's workers a directory of their own, so
+                 a compromised worker cannot read the secret of another provider
   --body-dir     body_secret, body_token_pub (the public half: it can check tokens, not make them)
                  and the body service's certificate
   --db-dir       db_admin_password, for the database container
@@ -460,7 +490,7 @@ run init at least once a year; the Compose file runs it at every start). The pro
 certificate files again within 30 seconds, so they need no restart.`,
 	Example: `# on the host, for a deployment that is not Compose:
 dexafix secrets init --host-dir ./secrets/host --api-dir ./secrets/api --web-dir ./secrets/web \
-  --worker-dir ./secrets/worker --body-dir ./secrets/body
+  --worker-dir withings=./secrets/worker-withings --worker-dir strengthlevel=./secrets/worker-strengthlevel --body-dir ./secrets/body
 # as the Compose init container: it starts by itself at every docker compose up`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -469,7 +499,11 @@ dexafix secrets init --host-dir ./secrets/host --api-dir ./secrets/api --web-dir
 		o.hostDir, _ = f.GetString("host-dir")
 		o.apiDir, _ = f.GetString("api-dir")
 		o.webDir, _ = f.GetString("web-dir")
-		o.workerDir, _ = f.GetString("worker-dir")
+		dirs, _ := f.GetStringSlice("worker-dir")
+		var err error
+		if o.workerDirs, err = parseWorkerDirs(dirs); err != nil {
+			return err
+		}
 		o.bodyDir, _ = f.GetString("body-dir")
 		o.dbDir, _ = f.GetString("db-dir")
 		o.dbsetupDir, _ = f.GetString("dbsetup-dir")
@@ -484,7 +518,6 @@ dexafix secrets init --host-dir ./secrets/host --api-dir ./secrets/api --web-dir
 		}
 		o.validity = time.Duration(days) * 24 * time.Hour
 		owner, _ := f.GetString("chown")
-		var err error
 		if o.uid, o.gid, err = parseOwner(owner); err != nil {
 			return err
 		}
@@ -497,7 +530,7 @@ func init() {
 	f.String("host-dir", "", "directory for the passwords, connection strings and encryption keys to back up (created only when missing)")
 	f.String("api-dir", "", "directory of the api process (the source of the secrets it shares)")
 	f.String("web-dir", "", "directory of the web process")
-	f.String("worker-dir", "", "directory of the workers")
+	f.StringSlice("worker-dir", nil, "PROVIDER=DIR: directory of the workers of one provider (repeat for each provider)")
 	f.String("body-dir", "", "directory of the body service")
 	f.String("db-dir", "", "directory of the database container (db_admin_password)")
 	f.String("dbsetup-dir", "", "directory of the db-setup container (admin_dsn and the two role passwords, for dexafix db provision)")
@@ -509,4 +542,24 @@ func init() {
 	f.Int("mtls-days", 397, "days the mutual TLS certificates are valid")
 	f.String("chown", "", "give the directories and files to uid:gid, such as 568:568. As root init does it; as that user it has nothing to change; as anybody else it stops and tells you to run it as root once")
 	secretsCmd.AddCommand(secretsInitCmd)
+}
+
+// parseWorkerDirs reads the PROVIDER=DIR entries of --worker-dir.
+func parseWorkerDirs(entries []string) (map[string]string, error) {
+	known := map[string]bool{}
+	for _, n := range builtin.Names() {
+		known[n] = true
+	}
+	out := map[string]string{}
+	for _, e := range entries {
+		name, dir, ok := strings.Cut(e, "=")
+		if !ok || dir == "" || !known[name] {
+			return nil, fmt.Errorf("--worker-dir %q: write PROVIDER=DIR with a provider of %s, such as withings=/secrets/worker-withings", e, strings.Join(builtin.Names(), ", "))
+		}
+		if _, dup := out[name]; dup {
+			return nil, fmt.Errorf("--worker-dir names %s twice", name)
+		}
+		out[name] = dir
+	}
+	return out, nil
 }

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -64,8 +65,14 @@ func NewWithWorkers(st store.Store, wo builtin.Options) (*Server, error) {
 	b.DisableInternalBudget() // no flood protection between the halves of one process
 	secret := randomHex(32)
 	b.SetServiceSecrets(secret)
-	workerSecret := randomHex(32)
-	b.SetWorkerSecrets(workerSecret)
+	// One secret per provider, each held by that provider's worker only.
+	var groups []mainbackend.WorkerSecrets
+	workerSecrets := map[string]string{}
+	for _, name := range builtin.Names() {
+		workerSecrets[name] = randomHex(32)
+		groups = append(groups, mainbackend.WorkerSecrets{Providers: []string{name}, Secrets: []string{workerSecrets[name]}})
+	}
+	must.Do(b.SetWorkerSecrets(groups...)) // cannot fail: every built-in provider is registered, once
 	// Neither call can fail: the address is fixed and valid, and the templates are built into the binary.
 	client := must.Value(apiclient.New("http://backend.internal", &http.Client{Transport: apiclient.InProcess(b.InternalHandler())}, secret))
 	f := must.Value(frontend.NewFrontend(client))
@@ -82,24 +89,28 @@ func NewWithWorkers(st store.Store, wo builtin.Options) (*Server, error) {
 			log.Error().Err(err).Msg("could not pass the changed settings to the frontend")
 		}
 	})
-	stop := startEmbeddedWorkers(b, workerSecret, wo)
+	stop := startEmbeddedWorkers(b, workerSecrets, wo)
 	return &Server{Frontend: f, Backend: b, body: bodySvc, stopWorkers: stop}, nil
 }
 
-// startEmbeddedWorkers runs the built-in workers inside this process, talking to the backend over
-// the in-process transport. It returns a function that stops them and waits.
-func startEmbeddedWorkers(b *mainbackend.Backend, secret string, wo builtin.Options) (stop func()) {
-	// None of this can fail: the address is fixed and valid, and every built-in provider is known.
-	wc := must.Value(workerapi.New("http://backend.internal", &http.Client{Transport: apiclient.InProcess(b.InternalHandler())}, secret))
-	r := runner.New(wc, runner.Options{ID: "embedded", Concurrency: 2, ConfigEvery: 5 * time.Second})
-	must.Do(builtin.Register(r, nil, wo))
+// startEmbeddedWorkers runs the built-in workers inside this process, one per provider with the
+// secret of that provider, talking to the backend over the in-process transport. It returns a
+// function that stops them and waits.
+func startEmbeddedWorkers(b *mainbackend.Backend, secrets map[string]string, wo builtin.Options) (stop func()) {
 	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		must.Do(r.Run(ctx)) // fails only for no handlers or a refused secret, and neither is possible here
-	}()
-	return func() { cancel(); <-done }
+	var wg sync.WaitGroup
+	for name, secret := range secrets {
+		// None of this can fail: the address is fixed and valid, and every built-in provider is known.
+		wc := must.Value(workerapi.New("http://backend.internal", &http.Client{Transport: apiclient.InProcess(b.InternalHandler())}, secret))
+		r := runner.New(wc, runner.Options{ID: "embedded-" + name, Concurrency: 2, ConfigEvery: 5 * time.Second})
+		must.Do(builtin.Register(r, []string{name}, wo))
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			must.Do(r.Run(ctx)) // fails only for no handlers or a refused secret, and neither is possible here
+		}()
+	}
+	return func() { cancel(); wg.Wait() }
 }
 
 // SetVersion sets the version both halves report.

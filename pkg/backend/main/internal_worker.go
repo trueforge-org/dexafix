@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -42,17 +43,61 @@ const (
 	maxLeasePolls     = 64 // worker requests held open waiting for a job
 )
 
-// SetWorkerSecrets sets the secrets the worker endpoints accept. The first is the one workers
-// send; the others are accepted so that a secret can be rotated without downtime. Without any, the
-// worker endpoints refuse every call.
-func (s *Backend) SetWorkerSecrets(secrets ...string) {
-	var hashes [][32]byte
-	for _, sec := range secrets {
-		if sec = strings.TrimSpace(sec); sec != "" {
-			hashes = append(hashes, sha256.Sum256([]byte(sec)))
+// WorkerSecrets is a group of secrets that open the worker endpoints for the named providers only.
+// A worker that holds one of them can register for, lease and report on the kinds of those
+// providers and no others, so a compromised worker of one provider never sees the credentials of
+// another.
+type WorkerSecrets struct {
+	Providers []string
+	Secrets   []string
+}
+
+type workerSecret struct {
+	hash      [32]byte
+	providers map[string]bool
+}
+
+// workerProvidersKey carries the providers the worker secret of a request opens.
+type workerProvidersKey struct{}
+
+// SetWorkerSecrets sets the secrets the worker endpoints accept, each group for its providers. In a
+// group the first secret is the one workers send; the others are accepted so that a secret can be
+// rotated without downtime. Without any, the worker endpoints refuse every call. A group without a
+// provider or secret, an unknown provider, and a secret that is in two groups are refused: a secret
+// must never open more than its worker needs.
+func (s *Backend) SetWorkerSecrets(groups ...WorkerSecrets) error {
+	var accepted []workerSecret
+	seen := map[[32]byte]bool{}
+	for _, g := range groups {
+		providers := map[string]bool{}
+		for _, name := range g.Providers {
+			if _, ok := s.providerNamed(name); !ok {
+				return fmt.Errorf("worker secret for unknown provider %q", name)
+			}
+			providers[name] = true
+		}
+		if len(providers) == 0 {
+			return errors.New("a worker secret needs the providers it opens")
+		}
+		n := 0
+		for _, sec := range g.Secrets {
+			if sec = strings.TrimSpace(sec); sec == "" {
+				continue
+			}
+			h := sha256.Sum256([]byte(sec))
+			if seen[h] {
+				return errors.New("a worker secret may belong to one group of providers only")
+			}
+			seen[h] = true
+			accepted = append(accepted, workerSecret{hash: h, providers: providers})
+			n++
+		}
+		if n == 0 {
+			return errors.New("a worker secret group holds no secret")
 		}
 	}
-	s.workerSecrets = hashes
+	s.workerSecrets = accepted
+	return nil
 }
 
 // matchSecret compares a presented secret with all accepted ones, in constant time.
@@ -68,13 +113,33 @@ func matchSecret(accepted [][32]byte, presented string) bool {
 	return ok == 1
 }
 
+// matchWorkerSecret compares a presented secret with all accepted ones, in constant time, and
+// returns the providers the matching one opens.
+func matchWorkerSecret(accepted []workerSecret, presented string) (map[string]bool, bool) {
+	if presented == "" {
+		return nil, false
+	}
+	sum := sha256.Sum256([]byte(presented))
+	var found map[string]bool
+	ok := 0
+	for _, a := range accepted { // all of them, so timing does not say which one matched
+		m := subtle.ConstantTimeCompare(sum[:], a.hash[:])
+		if m == 1 {
+			found = a.providers
+		}
+		ok |= m
+	}
+	return found, ok == 1
+}
+
 func (s *Backend) workerAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !matchSecret(s.workerSecrets, r.Header.Get(workerapi.HeaderWorker)) {
+		providers, ok := matchWorkerSecret(s.workerSecrets, r.Header.Get(workerapi.HeaderWorker))
+		if !ok {
 			internalFail(w, http.StatusUnauthorized, apiclient.CodeUnauthorized, "worker authentication required")
 			return
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), workerProvidersKey{}, providers)))
 	})
 }
 
@@ -151,12 +216,25 @@ func (s *Backend) workerConfig(w http.ResponseWriter, r *http.Request) {
 	internalJSON(w, http.StatusOK, s.workerConfigNow())
 }
 
-func (s *Backend) knownKinds(kinds []string) []string {
+// kindProvider is the provider a kind belongs to: kinds are named "<provider>.<action>".
+func kindProvider(kind string) string {
+	p, _, _ := strings.Cut(kind, ".")
+	return p
+}
+
+// knownKinds keeps the kinds that exist and belong to a provider the request's worker secret
+// opens, once each. A worker therefore cannot name kinds of another provider, and the list is never
+// longer than the number of kinds there are.
+func (s *Backend) knownKinds(ctx context.Context, kinds []string) []string {
+	allowed, _ := ctx.Value(workerProvidersKey{}).(map[string]bool)
+	seen := map[string]bool{}
 	var out []string
 	for _, k := range kinds {
-		if _, ok := s.kinds[k]; ok {
-			out = append(out, k)
+		if _, ok := s.kinds[k]; !ok || seen[k] || !allowed[kindProvider(k)] {
+			continue
 		}
+		seen[k] = true
+		out = append(out, k)
 	}
 	return out
 }
@@ -170,7 +248,7 @@ func (s *Backend) workerRegister(w http.ResponseWriter, r *http.Request) {
 		internalFail(w, http.StatusBadRequest, apiclient.CodeInvalid, "invalid worker id")
 		return
 	}
-	if err := s.store.TouchWorker(r.Context(), in.ID, s.knownKinds(in.Kinds), in.Version, time.Now()); err != nil {
+	if err := s.store.TouchWorker(r.Context(), in.ID, s.knownKinds(r.Context(), in.Kinds), in.Version, time.Now()); err != nil {
 		internalError(w, err)
 		return
 	}
@@ -184,7 +262,7 @@ func (s *Backend) workerLease(w http.ResponseWriter, r *http.Request) {
 	if !workerDecode(w, r, &in) {
 		return
 	}
-	kinds := s.knownKinds(in.Kinds)
+	kinds := s.knownKinds(r.Context(), in.Kinds)
 	if len(kinds) == 0 || in.Worker == "" || len(in.Worker) > 64 {
 		internalFail(w, http.StatusBadRequest, apiclient.CodeInvalid, "name the worker and the kinds of job it runs")
 		return
@@ -225,7 +303,7 @@ func (s *Backend) workerLease(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if ok {
-			s.answerLease(ctx, w, job, token, hash)
+			s.answerLease(ctx, w, job, token, hash, in.Worker)
 			return
 		}
 		if !time.Now().Before(deadline) {
@@ -242,7 +320,7 @@ func (s *Backend) workerLease(w http.ResponseWriter, r *http.Request) {
 
 // answerLease builds the payload of a leased job and sends it. When that is impossible the job is
 // ended or given back here, so it never sits leased to a worker that does not know about it.
-func (s *Backend) answerLease(ctx context.Context, w http.ResponseWriter, job models.Job, token, hash string) {
+func (s *Backend) answerLease(ctx context.Context, w http.ResponseWriter, job models.Job, token, hash, worker string) {
 	spec := s.kinds[job.Kind]
 	payload, err := spec.Lease(ctx, s, job)
 	if err == nil {
@@ -251,6 +329,8 @@ func (s *Backend) answerLease(ctx context.Context, w http.ResponseWriter, job mo
 			if text == "" {
 				text = "{}"
 			}
+			// The payload may hold the user's credentials: leave a trace of who got them.
+			s.auditBackground(job.UserID, auditWorkerLease, job.Kind+" worker="+clip(worker, 64))
 			internalJSON(w, http.StatusOK, workerapi.Lease{
 				Job: workerapi.Job{ID: job.PublicID, Kind: job.Kind, UserID: job.UserID, Attempt: job.Attempts,
 					MaxAttempts: job.MaxAttempts, Payload: json.RawMessage(text)},

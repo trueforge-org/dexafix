@@ -89,10 +89,10 @@ type Backend struct {
 	// what the worker endpoints need. See workerproviders.go and internal_worker.go.
 	providers     []workerProvider
 	kinds         map[string]*kindSpec
-	workerSecrets [][32]byte    // accepted by the worker endpoints
-	workerBudget  *edge.Limiter // load budget of the worker endpoints; nil in the combined process
-	leasePolls    chan struct{} // worker requests waiting for a job
-	lastSweep     atomic.Int64  // when this process last ended expired leases (UnixNano)
+	workerSecrets []workerSecret // accepted by the worker endpoints, each for its providers
+	workerBudget  *edge.Limiter  // load budget of the worker endpoints; nil in the combined process
+	leasePolls    chan struct{}  // worker requests waiting for a job
+	lastSweep     atomic.Int64   // when this process last ended expired leases (UnixNano)
 
 	auditNoise *auditNoise
 	proxy      edge.Proxy

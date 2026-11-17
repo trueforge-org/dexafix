@@ -198,7 +198,7 @@ func newScriptedFixture(t *testing.T) *scriptedFixture {
 	}
 	t.Cleanup(b.Close)
 	b.SetServiceSecrets("service-secret-0123456789abcdef")
-	b.SetWorkerSecrets(testWorkerSecret)
+	allWorkerSecrets(t, b, testWorkerSecret)
 	srv := httptest.NewServer(b.InternalHandler())
 	t.Cleanup(srv.Close)
 	c, err := workerapi.New(srv.URL, nil, testWorkerSecret)

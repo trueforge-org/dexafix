@@ -82,7 +82,7 @@ Then point the api process at it:
 
 ```bash
 dexafix serve api --internal-listen :8081 \
-  --service-secret-file service.secret --worker-secret-file worker.secret \
+  --service-secret-file service.secret --worker-secret-file withings=withings.secret --worker-secret-file strengthlevel=strengthlevel.secret \
   --db-driver postgres --dsn-file main.dsn --encryption-key-file main.key \
   --body-url http://body:8082 \
   --body-secret-file body.secret --body-token-key-file body-token.key

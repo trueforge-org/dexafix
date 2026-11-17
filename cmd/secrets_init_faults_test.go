@@ -149,7 +149,7 @@ func TestSecretsInitAsRootStopsWhenItCannotGiveAFolderAway(t *testing.T) {
 
 func TestSecretsInitWithOnlyTheHostAndApiFolders(t *testing.T) {
 	o, dirs := testInit(t)
-	o.webDir, o.workerDir, o.bodyDir, o.dbDir, o.dbsetupDir, o.valkeyDir = "", "", "", "", "", ""
+	o.webDir, o.workerDirs, o.bodyDir, o.dbDir, o.dbsetupDir, o.valkeyDir = "", nil, "", "", "", ""
 	if err := o.run(); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestSecretsInitWithOnlyTheHostAndApiFolders(t *testing.T) {
 
 func TestSecretsInitHostFolderAloneMakesNoProcessSecrets(t *testing.T) {
 	o, dirs := testInit(t)
-	o.apiDir, o.webDir, o.workerDir, o.bodyDir, o.dbDir, o.dbsetupDir, o.valkeyDir = "", "", "", "", "", "", ""
+	o.apiDir, o.webDir, o.workerDirs, o.bodyDir, o.dbDir, o.dbsetupDir, o.valkeyDir = "", "", nil, "", "", "", ""
 	if err := o.run(); err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestSecretsInitCommandMakesTheFilesAndChecksItsFlags(t *testing.T) {
 	root := t.TempDir()
 	dir := func(n string) string { return filepath.Join(root, n) }
 	args := []string{"secrets", "init", "--host-dir", dir("host"), "--api-dir", dir("api"), "--web-dir", dir("web"),
-		"--worker-dir", dir("worker"), "--body-dir", dir("body"), "--db-dir", dir("db"), "--dbsetup-dir", dir("dbsetup"),
+		"--worker-dir", "withings=" + dir("worker"), "--worker-dir", "strengthlevel=" + dir("workersl"), "--body-dir", dir("body"), "--db-dir", dir("db"), "--dbsetup-dir", dir("dbsetup"),
 		"--valkey-dir", dir("valkey"), "--db-host", "postgres", "--mtls-days", "30"}
 	_, errText, err := run(t, args...)
 	if err != nil {

@@ -52,6 +52,7 @@ const (
 	auditProviderRemoved  = "provider_removed"
 	auditJobPriority      = "job_priority_changed"
 	auditJobCanceled      = "job_canceled"
+	auditWorkerLease      = "worker_lease"
 
 	auditTOTPEnabled           = "totp_enabled"
 	auditTOTPDisabled          = "totp_disabled"
@@ -87,7 +88,7 @@ var auditLabels = map[string]string{
 	auditPasswordSet: "Password set by an administrator", auditStrengthLevel: "Strength Level permission changed",
 	auditStrengthLevelBlk: "Strength Level multi-day permission changed", auditSettingChanged: "Server setting changed",
 	auditProviderSaved: "Sign-in provider saved", auditProviderRemoved: "Sign-in provider removed",
-	auditJobPriority: "Job priority changed", auditJobCanceled: "Job canceled by an administrator",
+	auditJobPriority: "Job priority changed", auditJobCanceled: "Job canceled by an administrator", auditWorkerLease: "Job handed to a worker",
 	auditTOTPEnabled: "Two-step verification turned on", auditTOTPDisabled: "Two-step verification turned off",
 	auditTOTPRemovedByAdmin: "Two-step verification removed by an administrator", auditRecoveryRegenerated: "Recovery codes replaced",
 	auditRecoveryUsed: "Recovery code used", auditSecondFactorFailed: "Wrong two-step code",

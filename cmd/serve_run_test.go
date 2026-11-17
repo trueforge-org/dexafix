@@ -65,7 +65,7 @@ func TestServeAPIRunsUntilItIsStopped(t *testing.T) {
 	health := freeAddr(t)
 	mtlsDir := makeSet(t)
 	args := append([]string{"serve", "api", "--listen", freeAddr(t), "--internal-listen", freeAddr(t),
-		"--service-secret-file", service, "--worker-secret-file", worker, "--health-listen", health,
+		"--service-secret-file", service, "--worker-secret-file", "withings=" + worker, "--health-listen", health,
 		"--internal-tls-cert-file", filepath.Join(mtlsDir, "api.pem"), "--internal-tls-key-file", filepath.Join(mtlsDir, "api.key"),
 		"--internal-tls-client-ca-file", filepath.Join(mtlsDir, "ca.pem"),
 		"--maintenance=false", "--force-password-login"}, sqliteArgs(t)...)
@@ -93,6 +93,7 @@ func TestServeAPIWithABodyServiceOfItsOwnRunsOnlyTheMainDatabase(t *testing.T) {
 
 func TestServeAPIStopsWithAnErrorWhenItCannotStart(t *testing.T) {
 	service := writeSecretFile(t, strings.Repeat("s", 40)+"\n")
+	worker := writeSecretFile(t, strings.Repeat("w", 40)+"\n")
 	missing := filepath.Join(t.TempDir(), "missing")
 	mtlsDir := makeSet(t)
 	cases := map[string]struct {
@@ -104,9 +105,15 @@ func TestServeAPIStopsWithAnErrorWhenItCannotStart(t *testing.T) {
 				"--internal-tls-client-ca-file", filepath.Join(mtlsDir, "ca.pem")},
 			"--internal-listen is empty"},
 		"a worker secret file that does not exist": {
-			[]string{"--service-secret-file", service, "--worker-secret-file", missing}, "worker secret"},
+			[]string{"--service-secret-file", service, "--worker-secret-file", "withings=" + missing}, "worker secret"},
 		"the same secret for the service and the workers": {
-			[]string{"--service-secret-file", service, "--worker-secret-file", service}, "service"},
+			[]string{"--service-secret-file", service, "--worker-secret-file", "withings=" + service}, "service"},
+		"a worker secret without its providers": {
+			[]string{"--service-secret-file", service, "--worker-secret-file", service}, "PROVIDERS=FILE"},
+		"a worker secret for a provider nobody knows": {
+			[]string{"--service-secret-file", service, "--worker-secret-file", "nosuch=" + service}, "nosuch"},
+		"one worker secret for two providers' entries": {
+			[]string{"--service-secret-file", service, "--worker-secret-file", "withings=" + worker, "--worker-secret-file", "strengthlevel=" + worker}, "already used"},
 		"a body url without its secret": {
 			[]string{"--service-secret-file", service, "--body-url", "http://127.0.0.1:1"}, "body-secret-file"},
 		"internal TLS files that cannot be read": {

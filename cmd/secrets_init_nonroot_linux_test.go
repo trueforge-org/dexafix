@@ -43,7 +43,7 @@ func TestSecretsInitAsAnotherUserStopsWithAdviceInAFolderOfRoot(t *testing.T) {
 	if err := os.MkdirAll(dirs["host"], 0o755); err != nil {
 		t.Fatal(err)
 	}
-	o.apiDir, o.webDir, o.workerDir, o.bodyDir, o.dbDir, o.dbsetupDir, o.valkeyDir = "", "", "", "", "", "", ""
+	o.apiDir, o.webDir, o.workerDirs, o.bodyDir, o.dbDir, o.dbsetupDir, o.valkeyDir = "", "", nil, "", "", "", ""
 	reachable(t, dirs["host"])
 	becomeUser(t, 65534)
 	err := o.run()

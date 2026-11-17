@@ -77,6 +77,23 @@ type workerFixture struct {
 	user   models.User
 }
 
+// allWorkerSecrets lets secrets open every provider the backend has: most tests are not about
+// which provider a secret is for.
+func allWorkerSecrets(t testing.TB, b *Backend, secrets ...string) {
+	t.Helper()
+	if err := setAllWorkerSecrets(b, secrets...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func setAllWorkerSecrets(b *Backend, secrets ...string) error {
+	var names []string
+	for _, p := range b.providers {
+		names = append(names, p.Name)
+	}
+	return b.SetWorkerSecrets(WorkerSecrets{Providers: names, Secrets: secrets})
+}
+
 func newWorkerFixture(t *testing.T) *workerFixture {
 	t.Helper()
 	st, err := sqlstore.Open(context.Background(), sqlstore.DriverSQLite, "file:"+t.Name()+"?mode=memory&cache=shared&_pragma=foreign_keys(1)")
@@ -91,7 +108,7 @@ func newWorkerFixture(t *testing.T) *workerFixture {
 	}
 	t.Cleanup(b.Close)
 	b.SetServiceSecrets("service-secret-0123456789abcdef")
-	b.SetWorkerSecrets(testWorkerSecret, "older-worker-secret-0123456789")
+	allWorkerSecrets(t, b, testWorkerSecret, "older-worker-secret-0123456789")
 	srv := httptest.NewServer(b.InternalHandler())
 	t.Cleanup(srv.Close)
 	c, err := workerapi.New(srv.URL, nil, testWorkerSecret)
@@ -188,7 +205,9 @@ func TestWorkerEndpointsHaveTheirOwnSecret(t *testing.T) {
 	}
 
 	// Without any worker secret configured the endpoints are closed, whatever is presented.
-	f.b.SetWorkerSecrets()
+	if err := f.b.SetWorkerSecrets(); err != nil {
+		t.Fatal(err)
+	}
 	if got := call(lease, map[string]string{workerapi.HeaderWorker: testWorkerSecret}, body); got != 401 {
 		t.Errorf("no secrets configured: status %d", got)
 	}
