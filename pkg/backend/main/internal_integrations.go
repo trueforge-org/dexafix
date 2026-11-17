@@ -33,6 +33,8 @@ func (s *Backend) internalIntegrationRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+u+"/integrations/{provider}/disconnect", s.internalUser(s.internalDisconnect))
 	mux.HandleFunc("POST "+p+"/integrations/{provider}/callback", s.internalCallback)
 
+	mux.HandleFunc("POST "+u+"/withings/auto", s.internalUser(s.internalWithingsAuto))
+	mux.HandleFunc("POST "+u+"/strengthlevel/push", s.internalUser(s.internalSLPush))
 	mux.HandleFunc("POST "+u+"/strengthlevel/login", s.internalUser(s.internalSLSaveLogin))
 	mux.HandleFunc("DELETE "+u+"/strengthlevel/login", s.internalUser(s.internalSLDeleteLogin))
 	mux.HandleFunc("POST "+u+"/strengthlevel/sync", s.internalUser(s.internalSLSync))
@@ -101,6 +103,53 @@ func (s *Backend) internalImport(w http.ResponseWriter, r *http.Request, u model
 		return
 	}
 	flashed(w, s.importMessage(p, in.Day, job))
+}
+
+// internalWithingsAuto switches the user's own daily Withings sync on or off, once an administrator
+// allowed it.
+func (s *Backend) internalWithingsAuto(w http.ResponseWriter, r *http.Request, u models.User) {
+	var in struct{ Enabled bool }
+	if !internalDecode(w, r, &in) {
+		return
+	}
+	if !u.WithingsAutoAllowed {
+		flashed(w, "The daily Withings sync is not enabled for your account. Ask an administrator.")
+		return
+	}
+	if err := s.store.SetUserWithingsAuto(r.Context(), u.ID, in.Enabled); err != nil {
+		internalError(w, err)
+		return
+	}
+	s.audit(r, u.ID, auditWithingsAutoOwn, onOff(in.Enabled))
+	if in.Enabled {
+		s.resumeSchedule(r.Context(), u.ID, kindWithingsImport) // a switch turned on again starts afresh
+		flashed(w, "The last two days are now fetched from Withings every day.")
+		return
+	}
+	flashed(w, "Withings is no longer fetched automatically.")
+}
+
+// internalSLPush switches the user's own automatic send to Strength Level on or off, once an
+// administrator allowed it.
+func (s *Backend) internalSLPush(w http.ResponseWriter, r *http.Request, u models.User) {
+	var in struct{ Enabled bool }
+	if !internalDecode(w, r, &in) {
+		return
+	}
+	if !u.StrengthLevelAuto || !u.StrengthLevelPushAllowed {
+		flashed(w, "The automatic send to Strength Level is not enabled for your account. Ask an administrator.")
+		return
+	}
+	if err := s.store.SetUserStrengthLevelPush(r.Context(), u.ID, in.Enabled); err != nil {
+		internalError(w, err)
+		return
+	}
+	s.audit(r, u.ID, auditStrengthLevelPshOwn, onOff(in.Enabled))
+	if in.Enabled {
+		flashed(w, "The last 7 days are now sent to Strength Level, overwriting what is there, whenever new scale data arrives.")
+		return
+	}
+	flashed(w, "New scale data is no longer sent to Strength Level automatically.")
 }
 
 // oauthState is what the state cookie of a connection (Withings and the like) carries: the user who

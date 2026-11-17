@@ -18,7 +18,7 @@ func (s *Backend) strengthLevelView(r *http.Request, u models.User) *slView {
 	if !u.StrengthLevelAuto {
 		return nil
 	}
-	v := &slView{UserID: u.ID, Msg: flashParam(r)}
+	v := &slView{UserID: u.ID, Msg: flashParam(r), PushAllowed: u.StrengthLevelPushAllowed, PushOn: u.StrengthLevelPushAllowed && u.StrengthLevelPush}
 	login, err := s.strengthLevelLogin(r, u)
 	if err == nil {
 		v.Saved, v.Email = true, login.Email

@@ -41,20 +41,22 @@ const (
 	auditConnect          = "integration_connected"
 	auditDisconnect       = "integration_disconnected"
 
-	auditUserAdded        = "user_added"
-	auditUserDeleted      = "user_deleted"
-	auditRoleChanged      = "role_changed"
-	auditPasswordSet      = "password_set_by_admin"
-	auditStrengthLevel    = "strengthlevel_permission_changed"
-	auditStrengthLevelBlk = "strengthlevel_bulk_permission_changed"
-	auditWithingsAuto     = "withings_auto_permission_changed"
-	auditStrengthLevelPsh = "strengthlevel_push_permission_changed"
-	auditSettingChanged   = "server_setting_changed"
-	auditProviderSaved    = "provider_saved"
-	auditProviderRemoved  = "provider_removed"
-	auditJobPriority      = "job_priority_changed"
-	auditJobCanceled      = "job_canceled"
-	auditWorkerLease      = "worker_lease"
+	auditUserAdded           = "user_added"
+	auditUserDeleted         = "user_deleted"
+	auditRoleChanged         = "role_changed"
+	auditPasswordSet         = "password_set_by_admin"
+	auditStrengthLevel       = "strengthlevel_permission_changed"
+	auditStrengthLevelBlk    = "strengthlevel_bulk_permission_changed"
+	auditWithingsAuto        = "withings_auto_permission_changed"
+	auditStrengthLevelPsh    = "strengthlevel_push_permission_changed"
+	auditWithingsAutoOwn     = "withings_auto_switched"
+	auditStrengthLevelPshOwn = "strengthlevel_push_switched"
+	auditSettingChanged      = "server_setting_changed"
+	auditProviderSaved       = "provider_saved"
+	auditProviderRemoved     = "provider_removed"
+	auditJobPriority         = "job_priority_changed"
+	auditJobCanceled         = "job_canceled"
+	auditWorkerLease         = "worker_lease"
 
 	auditTOTPEnabled           = "totp_enabled"
 	auditTOTPDisabled          = "totp_disabled"
@@ -89,7 +91,8 @@ var auditLabels = map[string]string{
 	auditUserAdded: "User added", auditUserDeleted: "User deleted", auditRoleChanged: "Role changed",
 	auditPasswordSet: "Password set by an administrator", auditStrengthLevel: "Strength Level permission changed",
 	auditStrengthLevelBlk: "Strength Level multi-day permission changed",
-	auditWithingsAuto:     "Daily Withings sync permission changed", auditStrengthLevelPsh: "Automatic Strength Level send permission changed", auditSettingChanged: "Server setting changed",
+	auditWithingsAuto:     "Daily Withings sync permission changed", auditStrengthLevelPsh: "Automatic Strength Level send permission changed",
+	auditWithingsAutoOwn: "Daily Withings sync switched", auditStrengthLevelPshOwn: "Automatic Strength Level send switched", auditSettingChanged: "Server setting changed",
 	auditProviderSaved: "Sign-in provider saved", auditProviderRemoved: "Sign-in provider removed",
 	auditJobPriority: "Job priority changed", auditJobCanceled: "Job canceled by an administrator", auditWorkerLease: "Job handed to a worker",
 	auditTOTPEnabled: "Two-step verification turned on", auditTOTPDisabled: "Two-step verification turned off",

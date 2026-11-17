@@ -18,6 +18,10 @@ type IntegrationView struct {
 	Connected  bool // the user has linked their account
 	// AutoPaused is why automatic runs for the user were paused after repeated failures; empty when they are not.
 	AutoPaused string
+	// AutoAllowed is whether an administrator allowed the daily sync for the user, and AutoOn
+	// whether the user switched it on.
+	AutoAllowed, AutoOn bool
+	Msg                 string // the flash message, shown on the settings page
 }
 
 // AuditLine is one event as shown on a page.
@@ -93,6 +97,9 @@ type SLView struct {
 	Email  string // the saved login's e-mail address; the password is never sent back
 	Msg    string
 	Bulk   bool // the multi-day sync is allowed
+	// PushAllowed is whether an administrator allowed the automatic send after new scale data, and
+	// PushOn whether the user switched it on.
+	PushAllowed, PushOn bool
 	// AutoPaused is why automatic syncs for the user were paused after repeated failures; empty when they are not.
 	AutoPaused string
 	Job        *SLJobView // the latest multi-day sync, if any

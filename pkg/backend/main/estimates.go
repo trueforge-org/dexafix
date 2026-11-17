@@ -14,7 +14,7 @@ func (s *Backend) withingsView(r *http.Request, u models.User) *integrationView 
 		return nil
 	}
 	configured, _ := p.OAuth.Configured(r.Context(), s)
-	v := &integrationView{Configured: configured}
+	v := &integrationView{Configured: configured, AutoAllowed: u.WithingsAutoAllowed, AutoOn: u.WithingsAutoAllowed && u.WithingsAuto}
 	v.Connected = configured && s.connected(r.Context(), p, u.ID)
 	if v.Connected {
 		v.AutoPaused = s.pausedReason(r.Context(), u.ID, kindWithingsImport)

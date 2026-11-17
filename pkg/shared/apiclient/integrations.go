@@ -74,6 +74,22 @@ func (c *Client) DeleteStrengthLevelLogin(ctx context.Context, userID int64) (Fl
 	return f, err
 }
 
+// SetWithingsAuto switches the user's own daily Withings sync on or off. It only works once an
+// administrator allowed it.
+func (c *Client) SetWithingsAuto(ctx context.Context, userID int64, on bool) (Flash, error) {
+	var f Flash
+	err := c.Post(ctx, userPath(userID, "/withings/auto"), map[string]bool{"enabled": on}, &f)
+	return f, err
+}
+
+// SetStrengthLevelPush switches the user's own automatic send to Strength Level on or off. It only
+// works once an administrator allowed it.
+func (c *Client) SetStrengthLevelPush(ctx context.Context, userID int64, on bool) (Flash, error) {
+	var f Flash
+	err := c.Post(ctx, userPath(userID, "/strengthlevel/push"), map[string]bool{"enabled": on}, &f)
+	return f, err
+}
+
 // StartStrengthLevelSync starts the multi-day sync. days is the raw form value.
 func (c *Client) StartStrengthLevelSync(ctx context.Context, userID int64, days string, update bool) (Flash, error) {
 	var f Flash

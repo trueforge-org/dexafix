@@ -158,6 +158,7 @@
     <h2>Withings {{help "withings"}}</h2>
     {{if .Connected}}<span class="status on">Connected</span>{{else if .Configured}}<span class="status">Not connected</span>{{else}}<span class="status">Not set up</span>{{end}}
   </div>
+  {{if and .Msg (not $.StrengthLevel)}}<p class="notice" role="status">{{.Msg}}</p>{{end}}
   {{if .Connected}}
   <p class="help">Your Withings account is linked. Import fetches the last two days; Sync all history fetches every measurement, which is heavy on Withings, so use it once after connecting. Both fill days without readings and leave days with manual readings alone. Disconnecting keeps the readings already imported.</p>
   {{if .AutoPaused}}<p class="notice" role="status">{{.AutoPaused}} They start again when you disconnect and connect Withings again, or when an administrator resumes them.</p>{{end}}
@@ -165,6 +166,13 @@
     <form method="post" action="/u/{{$.User.ID}}/integrations/withings/disconnect" class="start"><button type="submit" class="danger">Disconnect Withings</button></form>
     <form method="post" action="/u/{{$.User.ID}}/import/withings"><button type="submit">Import last 2 days</button></form>
     <form method="post" action="/u/{{$.User.ID}}/import/withings"><input type="hidden" name="all" value="1"><button type="submit" class="secondary">Sync all history</button></form>
+  </div>
+  <div class="section">
+    <h3>Daily sync</h3>
+    {{if .AutoAllowed}}
+    <p class="help">Fetches your last two days from Withings once a day, so new weigh-ins show up without clicking. It is {{if .AutoOn}}<strong>on</strong>{{else}}<strong>off</strong>{{end}}.</p>
+    <form method="post" action="/u/{{$.User.ID}}/withings/auto"><input type="hidden" name="enabled" value="{{if .AutoOn}}0{{else}}1{{end}}"><button type="submit" class="secondary">{{if .AutoOn}}Switch off daily sync{{else}}Switch on daily sync{{end}}</button></form>
+    {{else}}<p class="help">The daily sync is not enabled for your account. An administrator can allow it.</p>{{end}}
   </div>
   {{else if .Configured}}
   <p class="help">Link your Withings account to import your scale measurements instead of typing them in. You will be sent to Withings to grant access.</p>
@@ -195,6 +203,13 @@
       <button type="submit">{{if .Saved}}Replace login{{else}}Save login{{end}}</button>
     </div>
   </form>
+  <div class="section">
+    <h3>Automatic send</h3>
+    {{if .PushAllowed}}
+    <p class="help">Whenever new scale data arrives (from Withings, the API or a manual entry), your last 7 days are sent to Strength Level, overwriting the days that exist there. It is {{if .PushOn}}<strong>on</strong>{{else}}<strong>off</strong>{{end}}.</p>
+    <form method="post" action="/u/{{$.User.ID}}/strengthlevel/push"><input type="hidden" name="enabled" value="{{if .PushOn}}0{{else}}1{{end}}"><button type="submit" class="secondary">{{if .PushOn}}Switch off automatic send{{else}}Switch on automatic send{{end}}</button></form>
+    {{else}}<p class="help">The automatic send is not enabled for your account. An administrator can allow it.</p>{{end}}
+  </div>
   {{if .Saved}}
   <form id="sl-remove" method="post" action="/u/{{$.User.ID}}/strengthlevel/login/delete"></form>
   {{if .Bulk}}

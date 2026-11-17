@@ -3,6 +3,7 @@ package mainbackend
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -176,5 +177,53 @@ func TestAdminAllowsTheAutomaticSyncsPerUser(t *testing.T) {
 	}
 	if _, err := r.api.AdminSetWithingsAuto(r.alice, 2, true); err == nil {
 		t.Fatal("a user changed their own permission")
+	}
+}
+
+// A user switches their own automatic syncs on and off once an administrator allowed them.
+func TestUsersSwitchTheirOwnAutomaticSyncsOnlyWhenAllowed(t *testing.T) {
+	ctx := context.Background()
+	r := newJobRig(t)
+	own := func() models.User {
+		u, _ := r.st.GetUser(ctx, 2)
+		return u
+	}
+	if f, err := r.api.SetWithingsAuto(r.alice, 2, true); err != nil || !strings.Contains(f.Message, "not enabled") || own().WithingsAuto {
+		t.Fatalf("before permission: %+v %v", f, err)
+	}
+	if f, err := r.api.SetStrengthLevelPush(r.alice, 2, true); err != nil || !strings.Contains(f.Message, "not enabled") || own().StrengthLevelPush {
+		t.Fatalf("before permission: %+v %v", f, err)
+	}
+	r.allowStrengthLevel(false)
+	if err := r.st.SetUserWithingsAutoAllowed(ctx, 2, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.st.SetUserStrengthLevelPushAllowed(ctx, 2, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.api.SetWithingsAuto(r.alice, 2, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.api.SetStrengthLevelPush(r.alice, 2, true); err != nil {
+		t.Fatal(err)
+	}
+	if u := own(); !u.WithingsAuto || !u.StrengthLevelPush {
+		t.Fatalf("switches %+v", u)
+	}
+	page, err := r.api.SettingsPage(r.alice, 2, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Withings == nil || !page.Withings.AutoAllowed || !page.Withings.AutoOn || page.StrengthLevel == nil || !page.StrengthLevel.PushAllowed || !page.StrengthLevel.PushOn {
+		t.Fatalf("settings page %+v %+v", page.Withings, page.StrengthLevel)
+	}
+	if _, err := r.api.SetWithingsAuto(r.alice, 2, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.api.SetStrengthLevelPush(r.alice, 2, false); err != nil {
+		t.Fatal(err)
+	}
+	if u := own(); u.WithingsAuto || u.StrengthLevelPush || !u.WithingsAutoAllowed {
+		t.Fatalf("after switching off %+v", u)
 	}
 }

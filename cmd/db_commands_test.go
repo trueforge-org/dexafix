@@ -68,19 +68,19 @@ func TestDBMigrateWalksTheSchemaUpAndDown(t *testing.T) {
 
 	// Rolling back drops tables, so it wants --yes and says what it would drop.
 	_, errText, err := migrate("down")
-	if err == nil || !strings.Contains(err.Error(), "--yes") || !strings.Contains(errText, "00004_height_sane.sql") {
+	if err == nil || !strings.Contains(err.Error(), "--yes") || !strings.Contains(errText, "00005_auto_sync.sql") {
 		t.Fatalf("down without --yes: %v %q", err, errText)
 	}
-	if out, _, err = migrate("version"); err != nil || strings.TrimSpace(out) != "4" {
+	if out, _, err = migrate("version"); err != nil || strings.TrimSpace(out) != "5" {
 		t.Fatalf("a refused rollback changed the schema: %q %v", out, err)
 	}
 	if out, _, err = migrate("down", "--yes"); err != nil || !strings.Contains(out, "rolled back") {
 		t.Fatalf("down --yes: %q %v", out, err)
 	}
-	if out, _, err = migrate("version"); err != nil || strings.TrimSpace(out) != "3" {
+	if out, _, err = migrate("version"); err != nil || strings.TrimSpace(out) != "4" {
 		t.Fatalf("version after the rollback: %q %v", out, err)
 	}
-	if out, _, err = migrate("up"); err != nil || !strings.Contains(out, "applied") || !strings.Contains(out, "00004_height_sane.sql") {
+	if out, _, err = migrate("up"); err != nil || !strings.Contains(out, "applied") || !strings.Contains(out, "00005_auto_sync.sql") {
 		t.Fatalf("up after the rollback: %q %v", out, err)
 	}
 	if out, _, err = migrate("to", "0"); err == nil || !strings.Contains(err.Error(), "--yes") {

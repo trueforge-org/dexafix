@@ -62,6 +62,8 @@ func (s *Frontend) Handler() http.Handler {
 		s.settingsPage(w, r, u, "", flashParam(r), http.StatusOK)
 	}))
 	mux.HandleFunc("POST /u/{id}/settings", s.user(s.settingsSave))
+	mux.HandleFunc("POST /u/{id}/withings/auto", s.user(s.withingsAuto))
+	mux.HandleFunc("POST /u/{id}/strengthlevel/push", s.user(s.strengthLevelPush))
 	mux.HandleFunc("POST /u/{id}/strengthlevel/login", s.user(s.strengthLevelSaveLogin))
 	mux.HandleFunc("POST /u/{id}/strengthlevel/sync", s.user(s.strengthLevelSync))
 	mux.HandleFunc("GET /u/{id}/strengthlevel/status", s.user(s.strengthLevelStatus))

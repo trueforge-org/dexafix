@@ -13,6 +13,24 @@ func settingsFlash(w http.ResponseWriter, r *http.Request, u models.User, msg st
 	http.Redirect(w, r, userPath(u.ID, "settings")+"?"+apiclient.FlashQuery(msg)+"#strengthlevel", http.StatusSeeOther)
 }
 
+func (s *Frontend) withingsAuto(w http.ResponseWriter, r *http.Request, u models.User) {
+	f, err := s.api.SetWithingsAuto(r.Context(), u.ID, r.PostFormValue("enabled") == "1")
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	http.Redirect(w, r, userPath(u.ID, "settings")+"?"+apiclient.FlashQuery(f.Message)+"#withings", http.StatusSeeOther)
+}
+
+func (s *Frontend) strengthLevelPush(w http.ResponseWriter, r *http.Request, u models.User) {
+	f, err := s.api.SetStrengthLevelPush(r.Context(), u.ID, r.PostFormValue("enabled") == "1")
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	settingsFlash(w, r, u, f.Message)
+}
+
 func (s *Frontend) strengthLevelSaveLogin(w http.ResponseWriter, r *http.Request, u models.User) {
 	f, err := s.api.SaveStrengthLevelLogin(r.Context(), u.ID, r.PostFormValue("email"), r.PostFormValue("password"))
 	if err != nil {

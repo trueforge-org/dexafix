@@ -87,8 +87,12 @@ func (s *Backend) settingsPageData(r *http.Request, u models.User) (apiclient.Se
 	if sec.Activity, err = s.activityFor(r.Context(), u); err != nil {
 		return apiclient.SettingsPage{}, err
 	}
+	withings := s.withingsView(r, u)
+	if withings != nil {
+		withings.Msg = flashParam(r)
+	}
 	return apiclient.SettingsPage{
-		Withings:      s.withingsView(r, u),
+		Withings:      withings,
 		StrengthLevel: s.strengthLevelView(r, u),
 		Security:      sec,
 	}, nil
