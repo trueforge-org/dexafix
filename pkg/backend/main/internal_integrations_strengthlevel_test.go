@@ -276,6 +276,19 @@ func TestSendingOneDayToStrengthLevelTellsThePersonHowItEnded(t *testing.T) {
 		}
 		return r
 	}
+	t.Run("a day that cannot be real is refused before anything is queued", func(t *testing.T) {
+		for _, bad := range []string{"0001-01-01", "1899-12-31", "9999-12-31", time.Now().AddDate(0, 0, 10).Format(dateLayout), "not-a-day", "2026-2-3"} {
+			t.Run(bad, func(t *testing.T) {
+				r := ready(t)
+				if _, err := r.api.SendStrengthLevelDay(r.alice, 2, bad); !apiclient.IsCode(err, apiclient.CodeInvalid) {
+					t.Errorf("%v", err)
+				}
+				if jobs, _ := r.st.ListJobs(context.Background(), models.JobFilter{UserID: 2}); len(jobs) != 0 {
+					t.Errorf("%d jobs were queued", len(jobs))
+				}
+			})
+		}
+	})
 	t.Run("without a saved login the person is sent to Settings", func(t *testing.T) {
 		r := newJobRig(t)
 		r.allowStrengthLevel(false)

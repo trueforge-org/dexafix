@@ -291,7 +291,9 @@ func (s *Store) LeaseJob(ctx context.Context, req models.LeaseRequest, at time.T
 				Set("lease_until = ?", at.Add(req.LeaseFor)).
 				Set("deadline_at = ?", at.Add(time.Duration(c.Timeout)*time.Second)).
 				Set("started_at = COALESCE(started_at, ?)", at).Set("updated_at = ?", at).
-				Where("id = ? AND state = ?", c.ID, models.JobQueued).Exec(ctx)
+				// The conditions that chose the candidate are checked again by the claim itself: a job that
+				// another leaser just requeued with a back-off, or that expired meanwhile, is not taken.
+				Where("id = ? AND state = ? AND run_after <= ? AND (expires_at IS NULL OR expires_at > ?)", c.ID, models.JobQueued, at, at).Exec(ctx)
 			if err != nil {
 				return models.Job{}, false, err
 			}
@@ -337,13 +339,33 @@ func (s *Store) HeartbeatJob(ctx context.Context, publicID, tokenHash string, ex
 	return row.CancelRequested, nil
 }
 
+// leaseHeld reports whether row is running under the lease token and neither its lease nor its hard
+// time limit has run out: a result that comes after the reaper could have taken the job back, or
+// after the limit, is not accepted.
+func leaseHeld(row jobRow, tokenHash string, at time.Time) bool {
+	if row.State != models.JobRunning || row.LeaseTokenHash != tokenHash || tokenHash == "" {
+		return false
+	}
+	if row.LeaseUntil != nil && row.LeaseUntil.Before(at) {
+		return false
+	}
+	return row.DeadlineAt == nil || !row.DeadlineAt.Before(at)
+}
+
 // finishUpdate ends or requeues the attempt of row, guarded by the state and token it was read with.
 // It returns whether this call changed the job.
 func (s *Store) finishUpdate(ctx context.Context, row jobRow, state string, at time.Time, set func(*bun.UpdateQuery) *bun.UpdateQuery) (bool, error) {
-	q := s.db.NewUpdate().Model((*jobRow)(nil)).Set("state = ?", state).Set("updated_at = ?", at).
+	q := s.db.NewUpdate().Model((*jobRow)(nil)).Set("updated_at = ?", at).
 		Set("lease_owner = ''").Set("lease_token_hash = ''").Set("lease_until = NULL").Set("deadline_at = NULL")
-	if !models.JobActive(state) {
-		q = q.Set("finished_at = ?", at).Set("payload = ''") // the payload can hold a credential
+	if models.JobActive(state) {
+		// A cancel that landed after the job was read must not be lost: it is decided here, in the
+		// statement that ends the attempt, so the job is canceled instead of running once more.
+		q = q.Set("state = CASE WHEN cancel_requested THEN ? ELSE ? END", models.JobCanceled, state).
+			Set("finished_at = CASE WHEN cancel_requested THEN ? ELSE finished_at END", at).
+			Set("payload = CASE WHEN cancel_requested THEN '' ELSE payload END"). // the payload can hold a credential
+			Set("progress = CASE WHEN cancel_requested THEN '' ELSE progress END")
+	} else {
+		q = q.Set("state = ?", state).Set("finished_at = ?", at).Set("payload = ''").Set("progress = ''")
 	}
 	res, err := set(q).Where("id = ? AND state = ? AND lease_token_hash = ?", row.ID, models.JobRunning, row.LeaseTokenHash).Exec(ctx)
 	if err != nil {
@@ -376,7 +398,7 @@ func (s *Store) CompleteJob(ctx context.Context, publicID, tokenHash string, c m
 	if err != nil {
 		return models.Job{}, err
 	}
-	if row.State != models.JobRunning || row.LeaseTokenHash != tokenHash || tokenHash == "" {
+	if !leaseHeld(row, tokenHash, at) {
 		return models.Job{}, store.ErrLeaseLost
 	}
 	var ok bool
@@ -421,8 +443,10 @@ func (s *Store) CompleteJob(ctx context.Context, publicID, tokenHash string, c m
 	return s.GetJob(ctx, publicID)
 }
 
-// ReleaseJob gives a job back without counting the attempt, for a worker that is shutting down.
-func (s *Store) ReleaseJob(ctx context.Context, publicID, tokenHash string, at time.Time) error {
+// ReleaseJob gives a job back to the queue to run again at runAfter. The attempt still counts: a
+// release that cost nothing would let a worker lease the same job again and again, which for a
+// login check is unlimited tries at somebody's password. A job that ran out of attempts fails.
+func (s *Store) ReleaseJob(ctx context.Context, publicID, tokenHash string, at, runAfter time.Time) error {
 	at = at.UTC()
 	row, err := s.loadJob(ctx, "public_id = ?", publicID)
 	if err != nil {
@@ -431,12 +455,12 @@ func (s *Store) ReleaseJob(ctx context.Context, publicID, tokenHash string, at t
 	if row.State != models.JobRunning || row.LeaseTokenHash != tokenHash || tokenHash == "" {
 		return store.ErrLeaseLost
 	}
-	state := models.JobQueued
-	if row.CancelRequested {
-		state = models.JobCanceled
-	}
+	state, msg := afterAttempt(row, "given back by its worker", runAfter)
 	ok, err := s.finishUpdate(ctx, row, state, at, func(q *bun.UpdateQuery) *bun.UpdateQuery {
-		return q.Set("attempts = CASE WHEN attempts > 0 THEN attempts - 1 ELSE 0 END").Set("run_after = ?", at)
+		if state == models.JobFailed {
+			return q.Set("error = ?", msg)
+		}
+		return q.Set("run_after = ?", runAfter.UTC())
 	})
 	if err != nil {
 		return err
@@ -545,6 +569,13 @@ func (s *Store) PurgeJobs(ctx context.Context, before time.Time) (int64, error) 
 
 // TouchWorker records that a worker process asked for work.
 func (s *Store) TouchWorker(ctx context.Context, id string, kinds []string, version string, at time.Time) error {
+	// Worker ids are chosen by the worker, so the number of rows is bounded: one that holds the
+	// secret cannot make the table grow with every name it invents.
+	if n, err := s.db.NewSelect().Model((*workerRow)(nil)).Where("id <> ?", id).Count(ctx); err != nil {
+		return err
+	} else if n >= maxWorkerRows {
+		return fmt.Errorf("%w: too many workers", store.ErrInvalid)
+	}
 	row := workerRow{ID: id, Kinds: strings.Join(kinds, ","), Version: version, LastSeen: at.UTC()}
 	// A worker asks for work every second or so. A known worker is only written again when its row is
 	// older than workerTouchEvery (a worker counts as alive for far longer) or says something new, so
@@ -556,13 +587,16 @@ func (s *Store) TouchWorker(ctx context.Context, id string, kinds []string, vers
 	return err
 }
 
+// maxWorkerRows is the most worker rows kept; ListWorkers never returns more.
+const maxWorkerRows = 256
+
 // workerTouchEvery is how often the row of a worker that has nothing new to say is written.
 const workerTouchEvery = 20 * time.Second
 
 // ListWorkers returns the workers seen since a time, newest first.
 func (s *Store) ListWorkers(ctx context.Context, since time.Time) ([]models.WorkerInstance, error) {
 	var rows []workerRow
-	if err := s.db.NewSelect().Model(&rows).Where("last_seen >= ?", since.UTC()).OrderExpr("last_seen DESC, id").Scan(ctx); err != nil {
+	if err := s.db.NewSelect().Model(&rows).Where("last_seen >= ?", since.UTC()).OrderExpr("last_seen DESC, id").Limit(maxWorkerRows).Scan(ctx); err != nil {
 		return nil, err
 	}
 	out := make([]models.WorkerInstance, 0, len(rows))
@@ -663,7 +697,7 @@ func (s *Store) RunningJob(ctx context.Context, publicID, tokenHash string) (mod
 	if err != nil {
 		return models.Job{}, err
 	}
-	if row.State != models.JobRunning || row.LeaseTokenHash != tokenHash || tokenHash == "" {
+	if !leaseHeld(row, tokenHash, now()) {
 		return models.Job{}, store.ErrLeaseLost
 	}
 	return s.jobModel(row, true)

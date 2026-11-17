@@ -388,13 +388,13 @@ func TestWorkerLeaseFailures(t *testing.T) {
 		t.Fatalf("permanent: %+v", got)
 	}
 
-	// Our own trouble gives the job back without costing an attempt.
+	// Our own trouble gives the job back, and it waits its back-off like any temporary failure.
 	f.d.leaseErr = errors.New("database unavailable")
 	k := f.enqueue(t, f.user.ID, models.JobOriginUser)
 	if _, err := f.client.Lease(context.Background(), workerapi.LeaseRequest{Worker: "w1", Kinds: []string{demoKind}}); !errors.Is(err, apiclient.ErrUnavailable) {
 		t.Fatalf("lease while the backend is troubled: %v", err)
 	}
-	if got := f.job(t, k.PublicID); got.State != models.JobQueued || got.Attempts != 0 {
+	if got := f.job(t, k.PublicID); got.State != models.JobQueued || got.Attempts != 1 || !got.RunAfter.After(time.Now()) || got.Error != "could not prepare the job" {
 		t.Fatalf("transient: %+v", got)
 	}
 }

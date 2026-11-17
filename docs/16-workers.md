@@ -103,6 +103,13 @@ reaches every worker without a restart. Per kind of job (for example
 
 - **On**: turn a kind off to stop new jobs from starting.
 - **Jobs at once, in all workers** and **Attempts per job**.
+- A worker that stops (a restart) gives its job back; the api process counts that as
+  an attempt and makes the job wait the same back-off as after a temporary failure,
+  so giving jobs back is no way to try the same job over and over. The same goes
+  for a job that could not be prepared for a worker. A result or new credentials that
+  arrive after the job was canceled, or after its lease or time limit ran out, are
+  refused. A person can have at most 10 jobs of one kind waiting, and a worker secret
+  can ask for jobs about 50 times a second. At most 256 workers are listed.
 - **First retry after** (doubled for each further attempt, at most one hour)
   and **Time limit of one attempt**.
 - **Automatic run every (hours)**: `0` means no automatic runs.

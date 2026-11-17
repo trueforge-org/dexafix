@@ -3,9 +3,13 @@ package sqlstore
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/uptrace/bun"
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/store"
@@ -365,19 +369,130 @@ func TestJobCancel(t *testing.T) {
 	}
 }
 
-func TestJobReleaseDoesNotCountAttempt(t *testing.T) {
+// A release costs the attempt and waits: one that was free and immediate would let a worker lease
+// the same job again and again (unlimited login checks for one user).
+func TestAJobReleaseCountsTheAttemptAndWaits(t *testing.T) {
 	s, ctx, us := jobFixture(t, 1)
 	enqueue(t, s, ctx, us[1].ID, testKind, false, "k")
 	j, _ := lease(t, s, ctx, time.Now(), "w", testKind)
-	if err := s.ReleaseJob(ctx, j.PublicID, "tok-w", time.Now()); err != nil {
+	wait := time.Now().Add(time.Minute)
+	if err := s.ReleaseJob(ctx, j.PublicID, "tok-w", time.Now(), wait); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ReleaseJob(ctx, j.PublicID, "tok-w", time.Now()); !errors.Is(err, store.ErrLeaseLost) {
+	if err := s.ReleaseJob(ctx, j.PublicID, "tok-w", time.Now(), wait); !errors.Is(err, store.ErrLeaseLost) {
 		t.Fatalf("second release: %v", err)
 	}
-	again, ok := lease(t, s, ctx, time.Now().Add(time.Second), "w2", testKind)
-	if !ok || again.Attempts != 1 || again.LeaseOwner != "w2" {
+	if _, ok := lease(t, s, ctx, time.Now().Add(time.Second), "w2", testKind); ok {
+		t.Fatal("a released job was leased again before its wait was over")
+	}
+	again, ok := lease(t, s, ctx, wait.Add(time.Second), "w2", testKind)
+	if !ok || again.Attempts != 2 || again.LeaseOwner != "w2" {
 		t.Fatalf("after release: %v %+v", ok, again)
+	}
+	// The attempts are limited: releasing is no way round that.
+	at := wait.Add(time.Second)
+	if err := s.ReleaseJob(ctx, again.PublicID, "tok-w2", at, at); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < again.MaxAttempts; i++ {
+		at = at.Add(time.Second)
+		got, ok := lease(t, s, ctx, at, "w3", testKind)
+		if !ok {
+			break
+		}
+		if err := s.ReleaseJob(ctx, got.PublicID, "tok-w3", at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if final, _ := s.GetJob(ctx, j.PublicID); final.State != models.JobFailed || !strings.Contains(final.Error, "gave up") {
+		t.Fatalf("a job that was only ever released did not run out of attempts: %+v", final)
+	}
+}
+
+// A cancel that lands between reading the job and ending the attempt is not lost.
+func TestACancelDuringTheEndOfAnAttemptIsKept(t *testing.T) {
+	s, ctx, us := jobFixture(t, 1)
+	enqueue(t, s, ctx, us[1].ID, testKind, false, "k")
+	j, _ := lease(t, s, ctx, time.Now(), "w", testKind)
+	row, err := s.loadJob(ctx, "public_id = ?", j.PublicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CancelJob(ctx, j.PublicID, 0, time.Now()); err != nil { // after the read above
+		t.Fatal(err)
+	}
+	ok, err := s.finishUpdate(ctx, row, models.JobQueued, time.Now(), func(q *bun.UpdateQuery) *bun.UpdateQuery { return q })
+	if err != nil || !ok {
+		t.Fatalf("finish: %v %v", ok, err)
+	}
+	got, _ := s.GetJob(ctx, j.PublicID)
+	if got.State != models.JobCanceled || got.FinishedAt == nil || got.Payload != "" {
+		t.Fatalf("the cancel was lost: %+v", got)
+	}
+}
+
+// A result that comes after the lease or the hard time limit ran out is not accepted, and a progress
+// text is not kept once the job ended.
+func TestAResultAfterTheLeaseOrTheLimitIsTurnedAway(t *testing.T) {
+	s, ctx, us := jobFixture(t, 1)
+	enqueue(t, s, ctx, us[1].ID, testKind, false, "k")
+	j, _ := lease(t, s, ctx, time.Now(), "w", testKind)
+	progress := "halfway"
+	if _, err := s.HeartbeatJob(ctx, j.PublicID, "tok-w", time.Minute, &progress, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	late := time.Now().Add(2 * time.Hour)
+	if _, err := s.RunningJob(ctx, j.PublicID, "tok-w"); err != nil {
+		t.Fatalf("a live lease: %v", err)
+	}
+	if _, err := s.CompleteJob(ctx, j.PublicID, "tok-w", models.Completion{Outcome: models.OutcomeOK, Result: "{}"}, late); !errors.Is(err, store.ErrLeaseLost) {
+		t.Fatalf("a result after the deadline: %v", err)
+	}
+	done, err := s.CompleteJob(ctx, j.PublicID, "tok-w", models.Completion{Outcome: models.OutcomeOK, Result: "{}"}, time.Now())
+	if err != nil || done.State != models.JobSucceeded || done.Progress != "" {
+		t.Fatalf("a result in time: %+v %v", done, err)
+	}
+	// A lease whose time ran out is turned away too, even before the hard limit.
+	enqueue(t, s, ctx, us[1].ID, testKind, false, "k2")
+	k, _ := lease(t, s, ctx, time.Now(), "w", testKind)
+	if _, err := s.db.ExecContext(ctx, "UPDATE worker_jobs SET lease_until = ? WHERE public_id = ?", time.Now().UTC().Add(-time.Minute), k.PublicID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RunningJob(ctx, k.PublicID, "tok-w"); !errors.Is(err, store.ErrLeaseLost) {
+		t.Fatalf("a lease that ran out: %v", err)
+	}
+}
+
+// A job another leaser just requeued with a back-off, or that expired, is not claimed by a leaser
+// that chose it a moment earlier.
+func TestTheClaimChecksTheWaitAndTheExpiryAgain(t *testing.T) {
+	s, ctx, us := jobFixture(t, 1)
+	soon := time.Now().UTC().Add(time.Hour)
+	if _, _, err := s.EnqueueJob(ctx, models.NewJob{UserID: us[1].ID, Kind: testKind, Origin: models.JobOriginUser, Payload: "x",
+		MaxAttempts: 3, Timeout: time.Minute, RunAfter: soon}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := lease(t, s, ctx, time.Now(), "w", testKind); ok {
+		t.Fatal("a job that must wait was leased")
+	}
+}
+
+func TestTheNumberOfWorkersIsBounded(t *testing.T) {
+	s, ctx, _ := jobFixture(t, 1)
+	at := time.Now()
+	for i := 0; i < maxWorkerRows; i++ {
+		if err := s.TouchWorker(ctx, fmt.Sprintf("w%d", i), []string{testKind}, "", at); err != nil {
+			t.Fatalf("worker %d: %v", i, err)
+		}
+	}
+	if err := s.TouchWorker(ctx, "one-too-many", nil, "", at); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("a new worker beyond the limit: %v", err)
+	}
+	if err := s.TouchWorker(ctx, "w0", []string{testKind}, "v2", at.Add(time.Minute)); err != nil {
+		t.Fatalf("a known worker beyond the limit: %v", err)
+	}
+	if ws, err := s.ListWorkers(ctx, at.Add(-time.Hour)); err != nil || len(ws) != maxWorkerRows {
+		t.Fatalf("listed %d workers: %v", len(ws), err)
 	}
 }
 

@@ -142,6 +142,8 @@ var (
 	errKindPaused = errors.New("paused")
 	// errNoWorker: no worker that runs the kind has asked for work lately.
 	errNoWorker = errors.New("no worker")
+	// errTooManyJobs: the user already has maxQueuedJobsPerKind jobs of the kind waiting.
+	errTooManyJobs = errors.New("too many jobs")
 )
 
 // permanentError marks a failure no retry can fix.

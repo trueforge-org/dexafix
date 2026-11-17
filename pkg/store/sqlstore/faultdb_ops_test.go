@@ -261,7 +261,7 @@ func faultOps() []faultOp {
 			return e1(s.CompleteJob(c, f.runningJob, "tok-w", models.Completion{Outcome: models.OutcomeFail, Error: "x"}, f.at))
 		}},
 		{"ReleaseJob", func(c context.Context, s *Store, f faultData) error {
-			return s.ReleaseJob(c, f.runningJob, "tok-w", f.at)
+			return s.ReleaseJob(c, f.runningJob, "tok-w", f.at, f.at)
 		}},
 		{"CancelJob", func(c context.Context, s *Store, f faultData) error {
 			return e1(s.CancelJob(c, f.queuedJob, f.user, f.at))

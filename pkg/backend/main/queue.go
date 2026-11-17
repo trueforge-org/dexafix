@@ -49,6 +49,9 @@ type enqueueSpec struct {
 	Timeout time.Duration
 }
 
+// maxQueuedJobsPerKind is how many jobs of one kind a person may have waiting.
+const maxQueuedJobsPerKind = 10
+
 // enqueueJob queues a job under the settings of its kind. When an active job with the same key
 // exists, that one is returned and created is false. It refuses with errKindPaused when the kind is
 // off, and with errNoWorker for an interactive job when no worker of the kind is running, so a
@@ -69,6 +72,17 @@ func (s *Backend) enqueueJob(ctx context.Context, e enqueueSpec) (job models.Job
 		}
 		if !online {
 			return models.Job{}, false, errNoWorker
+		}
+	}
+	// Jobs are served first come, first served, so one person who queues without end would delay
+	// everybody else's. A person's requests (not the scheduler's) are capped per kind.
+	if e.Origin != models.JobOriginSchedule {
+		waiting, err := s.store.ListJobs(ctx, models.JobFilter{UserID: e.UserID, Kinds: []string{e.Kind}, States: []string{models.JobQueued}, Limit: maxQueuedJobsPerKind})
+		if err != nil {
+			return models.Job{}, false, err
+		}
+		if len(waiting) >= maxQueuedJobsPerKind {
+			return models.Job{}, false, errTooManyJobs
 		}
 	}
 	payload, err := encodeJSON(e.Payload)

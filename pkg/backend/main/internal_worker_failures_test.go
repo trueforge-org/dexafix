@@ -88,6 +88,7 @@ type workerFlakyStore struct {
 	store.Store
 	putFails       sync.Map // setting names whose PutSetting fails
 	enqueue        atomic.Bool
+	listJobs       atomic.Bool
 	lastFinished   atomic.Bool
 	expireQueued   atomic.Bool
 	release        atomic.Bool
@@ -139,6 +140,13 @@ func (f *workerFlakyStore) PutSetting(ctx context.Context, name, value string) e
 	return f.Store.PutSetting(ctx, name, value)
 }
 
+func (f *workerFlakyStore) ListJobs(ctx context.Context, fl models.JobFilter) ([]models.Job, error) {
+	if f.listJobs.Load() {
+		return nil, errWorkerFlaky
+	}
+	return f.Store.ListJobs(ctx, fl)
+}
+
 func (f *workerFlakyStore) EnqueueJob(ctx context.Context, n models.NewJob) (models.Job, bool, error) {
 	if f.enqueue.Load() {
 		return models.Job{}, false, errWorkerFlaky
@@ -160,11 +168,11 @@ func (f *workerFlakyStore) ExpireQueuedJobs(ctx context.Context, now time.Time) 
 	return f.Store.ExpireQueuedJobs(ctx, now)
 }
 
-func (f *workerFlakyStore) ReleaseJob(ctx context.Context, id, hash string, now time.Time) error {
+func (f *workerFlakyStore) ReleaseJob(ctx context.Context, id, hash string, now, runAfter time.Time) error {
 	if f.release.Load() {
 		return errWorkerFlaky
 	}
-	return f.Store.ReleaseJob(ctx, id, hash, now)
+	return f.Store.ReleaseJob(ctx, id, hash, now, runAfter)
 }
 
 func (f *workerFlakyStore) SettingsGeneration(ctx context.Context) (int64, error) {
@@ -478,7 +486,7 @@ func TestAJobIsPreparedForAWorkerOrEndedHonestly(t *testing.T) {
 				return nil, errors.New("the database is troubled")
 			}
 		})
-		f.flaky.release.Store(true)
+		f.flaky.completeLost.Store(true)
 		f.queue(t, scriptKind, models.JobOriginUser)
 		logs := captureSignInLog(t)
 		_, err := f.client.Lease(context.Background(), workerapi.LeaseRequest{Worker: "w1", Kinds: []string{scriptKind}})

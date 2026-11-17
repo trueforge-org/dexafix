@@ -125,6 +125,8 @@ func queueFailure(label string, err error) (string, bool) {
 		return label + " is paused by an administrator.", true
 	case errors.Is(err, errNoWorker):
 		return "No " + label + " worker is running, so this cannot start now. Ask an administrator.", true
+	case errors.Is(err, errTooManyJobs):
+		return label + " already has several requests of yours waiting. Wait for them to finish.", true
 	}
 	return "", false
 }

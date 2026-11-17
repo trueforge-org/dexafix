@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
@@ -16,7 +17,9 @@ func TestAWorkerThatGivesAJobBackLeavesItQueuedForTheNext(t *testing.T) {
 	if err := f.client.Release(context.Background(), l.Job.ID, l.Token); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.job(t, j.PublicID); got.State != models.JobQueued {
+	// It costs the attempt and waits the kind's back-off: a free, immediate release would let a worker
+	// lease the same job again and again.
+	if got := f.job(t, j.PublicID); got.State != models.JobQueued || got.Attempts != 1 || !got.RunAfter.After(time.Now()) {
 		t.Fatalf("after the release: %+v", got)
 	}
 	if err := f.client.Release(context.Background(), l.Job.ID, l.Token); !errors.Is(err, workerapi.ErrLeaseLost) {

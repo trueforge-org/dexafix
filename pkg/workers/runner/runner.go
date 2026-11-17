@@ -403,7 +403,8 @@ func (r *Runner) execute(parent context.Context, lease *workerapi.Lease) {
 		l.Warn().Msg("the lease was lost: the result is dropped")
 		return
 	case parent.Err() != nil:
-		// Shutting down: give the job back without costing an attempt.
+		// Shutting down: give the job back. The api process counts the attempt and makes it wait the kind's
+		// back-off, as for any other release.
 		rctx, rcancel := context.WithTimeout(context.WithoutCancel(parent), 10*time.Second)
 		defer rcancel()
 		if err := r.client.Release(rctx, job.ID, lease.Token); err != nil && !errors.Is(err, workerapi.ErrLeaseLost) {

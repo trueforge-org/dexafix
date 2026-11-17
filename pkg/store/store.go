@@ -273,7 +273,7 @@ type Store interface {
 	LeaseJob(ctx context.Context, req models.LeaseRequest, at time.Time) (job models.Job, ok bool, err error)
 	HeartbeatJob(ctx context.Context, publicID, tokenHash string, extend time.Duration, progress *string, at time.Time) (cancel bool, err error)
 	CompleteJob(ctx context.Context, publicID, tokenHash string, c models.Completion, at time.Time) (models.Job, error)
-	ReleaseJob(ctx context.Context, publicID, tokenHash string, at time.Time) error
+	ReleaseJob(ctx context.Context, publicID, tokenHash string, at, runAfter time.Time) error
 	CancelJob(ctx context.Context, publicID string, userID int64, at time.Time) (models.Job, error)
 	CancelJobs(ctx context.Context, userID int64, kinds []string, at time.Time) error
 	ReapExpiredLeases(ctx context.Context, at time.Time, backoff func(models.Job) time.Duration) ([]models.Job, error)

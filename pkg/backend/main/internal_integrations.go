@@ -355,7 +355,7 @@ func (s *Backend) internalSLDay(w http.ResponseWriter, r *http.Request, u models
 		return
 	}
 	day := in.Day
-	if t, err := time.Parse(dateLayout, day); err != nil || t.Format(dateLayout) != day {
+	if t, err := time.Parse(dateLayout, day); err != nil || t.Format(dateLayout) != day || !plausibleMeasurementTime(t, time.Now()) {
 		internalFail(w, http.StatusBadRequest, apiclient.CodeInvalid, "invalid day")
 		return
 	}
@@ -367,6 +367,7 @@ func (s *Backend) internalSLDay(w http.ResponseWriter, r *http.Request, u models
 		UserID: u.ID, Kind: kindStrengthLevelDay, Origin: models.JobOriginUser, Interactive: true,
 		Dedupe:  fmt.Sprintf("%s:%d:%s", kindStrengthLevelDay, u.ID, day),
 		Payload: slDayPayload{Day: day},
+		Expires: time.Hour, // somebody waits for it: a job nobody picks up soon is of no use later
 	})
 	if msg, known := queueFailure("Strength Level", err); known {
 		flashed(w, msg)

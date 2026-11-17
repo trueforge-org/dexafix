@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -41,6 +42,8 @@ const (
 	workerRate        = 100
 	workerBurst       = 200
 	maxLeasePolls     = 64 // worker requests held open waiting for a job
+	leaseRate         = 50 // lease requests per second for one worker secret
+	leaseBurst        = 100
 )
 
 // WorkerSecrets is a group of secrets that open the worker endpoints for the named providers only.
@@ -162,7 +165,21 @@ func (s *Backend) workerHandler() http.Handler {
 	if s.workerBudget != nil {
 		h = s.workerBudget.Middleware(h)
 	}
+	if s.leaseBudget != nil {
+		h = s.leaseBudget.Middleware(h)
+	}
 	return s.workerAuth(h)
+}
+
+// newLeaseBudget limits how often one worker secret may ask for a job. A lease waits for work for up
+// to 20 seconds, so a worker that behaves asks about once per wait; one that asks without waiting,
+// over and over, is slowed down instead of making the database answer every time.
+func newLeaseBudget() *edge.Limiter {
+	return &edge.Limiter{
+		Rate: leaseRate, Burst: leaseBurst,
+		Key:  func(r *http.Request) string { return hashToken(r.Header.Get(workerapi.HeaderWorker)) },
+		Skip: func(r *http.Request) bool { return !strings.HasSuffix(r.URL.Path, "/lease") },
+	}
 }
 
 func newWorkerBudget() *edge.Limiter {
@@ -222,6 +239,18 @@ func kindProvider(kind string) string {
 	return p
 }
 
+// workerRowID is the id a worker's row is kept under: the id it chose, behind the providers its
+// secret opens. A worker of one provider can therefore never overwrite the row of another's.
+func workerRowID(ctx context.Context, id string) string {
+	allowed, _ := ctx.Value(workerProvidersKey{}).(map[string]bool)
+	names := make([]string, 0, len(allowed))
+	for n := range allowed {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return strings.Join(names, "+") + ":" + id
+}
+
 // knownKinds keeps the kinds that exist and belong to a provider the request's worker secret
 // opens, once each. A worker therefore cannot name kinds of another provider, and the list is never
 // longer than the number of kinds there are.
@@ -248,7 +277,7 @@ func (s *Backend) workerRegister(w http.ResponseWriter, r *http.Request) {
 		internalFail(w, http.StatusBadRequest, apiclient.CodeInvalid, "invalid worker id")
 		return
 	}
-	if err := s.store.TouchWorker(r.Context(), in.ID, s.knownKinds(r.Context(), in.Kinds), in.Version, time.Now()); err != nil {
+	if err := s.store.TouchWorker(r.Context(), workerRowID(r.Context(), in.ID), s.knownKinds(r.Context(), in.Kinds), in.Version, time.Now()); err != nil {
 		internalError(w, err)
 		return
 	}
@@ -291,7 +320,7 @@ func (s *Backend) workerLease(w http.ResponseWriter, r *http.Request) {
 		}
 		token, hash := newLeaseToken()
 		req.TokenHash = hash
-		if err := s.store.TouchWorker(ctx, in.Worker, kinds, "", time.Now()); err != nil && ctx.Err() == nil {
+		if err := s.store.TouchWorker(ctx, workerRowID(ctx, in.Worker), kinds, "", time.Now()); err != nil && ctx.Err() == nil {
 			log.Warn().Err(err).Msg("record the worker")
 		}
 		s.maintainQueue(ctx)
@@ -350,8 +379,13 @@ func (s *Backend) answerLease(ctx context.Context, w http.ResponseWriter, job mo
 		return
 	}
 	log.Error().Err(err).Str("job", job.PublicID).Str("kind", job.Kind).Msg("could not prepare the job for a worker")
-	if rerr := s.store.ReleaseJob(rctx, job.PublicID, hash, time.Now()); rerr != nil {
+	// The attempt counts and the job waits its back-off, like any other temporary failure: a job
+	// that cannot be prepared must not be leased again at once, ahead of the scheduled work, forever.
+	retry := models.Completion{Outcome: models.OutcomeRetry, Error: "could not prepare the job", RetryAt: time.Now().Add(s.kindBackoff(job))}
+	if done, rerr := s.store.CompleteJob(rctx, job.PublicID, hash, retry, time.Now()); rerr != nil {
 		log.Error().Err(rerr).Msg("could not give the job back")
+	} else {
+		s.afterJob(rctx, done)
 	}
 	internalFail(w, http.StatusServiceUnavailable, apiclient.CodeUnavailable, "could not prepare the job")
 }
@@ -414,6 +448,10 @@ func (s *Backend) workerCredentials(w http.ResponseWriter, r *http.Request) {
 		internalError(w, err)
 		return
 	}
+	if job.CancelRequested { // a connection the user removed must not come back with a late result
+		leaseLost(w)
+		return
+	}
 	spec := s.kinds[job.Kind]
 	if spec == nil || spec.Credentials == nil {
 		internalFail(w, http.StatusBadRequest, apiclient.CodeInvalid, "this kind of job does not take credentials")
@@ -446,8 +484,21 @@ func (s *Backend) workerComplete(w http.ResponseWriter, r *http.Request) {
 		internalError(w, err)
 		return
 	}
+	// Two reports of one attempt at the same moment must not both be applied: the second is turned away
+	// as a lost lease. (The store ends the attempt once; this guard keeps Apply from running twice.)
+	if _, busy := s.completing.LoadOrStore(id, struct{}{}); busy {
+		leaseLost(w)
+		return
+	}
+	defer s.completing.Delete(id)
 	spec := s.kinds[job.Kind]
 	comp := models.Completion{Outcome: in.Outcome, Error: clip(in.Error, workerMaxErrorText)}
+	if job.CancelRequested && in.Outcome == models.OutcomeOK {
+		// Canceled while it ran: the result is not applied (a removed login or connection would come
+		// back with it). The job ends as canceled.
+		comp = models.Completion{Outcome: models.OutcomeRetry, Error: "canceled", RetryAt: time.Now()}
+		in.Outcome = models.OutcomeRetry
+	}
 	switch in.Outcome {
 	case models.OutcomeOK:
 		stored, err := spec.Apply(ctx, s, job, in.Result)
@@ -494,7 +545,11 @@ func (s *Backend) workerComplete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Backend) workerRelease(w http.ResponseWriter, r *http.Request) {
-	err := s.store.ReleaseJob(r.Context(), r.PathValue("id"), leaseOf(r), time.Now())
+	// The release counts as an attempt and waits the kind's back-off (see Store.ReleaseJob).
+	job, err := s.store.RunningJob(r.Context(), r.PathValue("id"), leaseOf(r))
+	if err == nil {
+		err = s.store.ReleaseJob(r.Context(), job.PublicID, leaseOf(r), time.Now(), time.Now().Add(s.kindBackoff(job)))
+	}
 	switch {
 	case errors.Is(err, store.ErrLeaseLost), errors.Is(err, store.ErrNotFound):
 		leaseLost(w)

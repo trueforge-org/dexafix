@@ -158,7 +158,7 @@ func TestACompletionIsRefusedWhenTheLeaseWasLostInTheMeantime(t *testing.T) {
 			t.Errorf("outcome %s: %v", outcome, err)
 		}
 	}
-	if err := s.ReleaseJob(ctx, fx.runningJob, "tok-w", time.Now()); !errors.Is(err, store.ErrLeaseLost) {
+	if err := s.ReleaseJob(ctx, fx.runningJob, "tok-w", time.Now(), time.Now()); !errors.Is(err, store.ErrLeaseLost) {
 		t.Errorf("release: %v", err)
 	}
 	// The reaper skips a job whose worker reported in time after all.
@@ -194,7 +194,7 @@ func TestReleasingACanceledJobEndsItInsteadOfQueueingItAgain(t *testing.T) {
 	if _, err := s.CancelJob(ctx, fx.runningJob, fx.user, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ReleaseJob(ctx, fx.runningJob, "tok-w", time.Now()); err != nil {
+	if err := s.ReleaseJob(ctx, fx.runningJob, "tok-w", time.Now(), time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if j, err := s.GetJob(ctx, fx.runningJob); err != nil || j.State != models.JobCanceled {

@@ -93,7 +93,9 @@ type Backend struct {
 	kinds         map[string]*kindSpec
 	workerSecrets []workerSecret // accepted by the worker endpoints, each for its providers
 	workerBudget  *edge.Limiter  // load budget of the worker endpoints; nil in the combined process
+	leaseBudget   *edge.Limiter  // how often one worker secret may ask for a job; nil in the combined process
 	leasePolls    chan struct{}  // worker requests waiting for a job
+	completing    sync.Map       // job ids whose result is being applied right now
 	lastSweep     atomic.Int64   // when this process last ended expired leases (UnixNano)
 
 	auditNoise *auditNoise
@@ -172,6 +174,7 @@ func NewBackend(st store.Store, opts ...Option) (*Backend, error) {
 	}
 	s.publicSlots = publicInFlight(st)
 	s.workerBudget = newWorkerBudget()
+	s.leaseBudget = newLeaseBudget()
 	s.internalBudget = &edge.Limiter{
 		MaxInFlight: internalMaxInFlight, MaxQueue: internalMaxQueue, MaxWait: budgetMaxWait,
 		Rate: internalRate, Burst: internalBurst,
@@ -276,7 +279,9 @@ func (s *Backend) APIHandler() http.Handler { return s.withAuth(s.apiMux()) }
 
 // DisableInternalBudget removes the load budget of the internal API, and of the worker endpoints.
 // The combined process uses it: there is no flood protection between the halves of one process.
-func (s *Backend) DisableInternalBudget() { s.internalBudget, s.workerBudget = nil, nil }
+func (s *Backend) DisableInternalBudget() {
+	s.internalBudget, s.workerBudget, s.leaseBudget = nil, nil, nil
+}
 
 // OnSettingsChange sets a function that is called after the settings in force change. The combined
 // process uses it to pass a changed setting on to the frontend at once. Set it before serving.
