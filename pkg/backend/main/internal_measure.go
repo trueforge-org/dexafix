@@ -101,6 +101,7 @@ func (s *Backend) internalScaleCreate(w http.ResponseWriter, r *http.Request, u 
 		internalError(w, err)
 		return
 	}
+	s.pushStrengthLevelAfterScale(r.Context(), u)
 	internalJSON(w, http.StatusNoContent, nil)
 }
 
@@ -114,5 +115,6 @@ func (s *Backend) internalScaleDelete(w http.ResponseWriter, r *http.Request, u 
 		return
 	}
 	s.audit(r, u.ID, auditReadingDeleted, "")
+	s.pushStrengthLevelAfterScale(r.Context(), u)
 	internalJSON(w, http.StatusNoContent, nil)
 }

@@ -265,6 +265,9 @@ func applyWithingsImport(ctx context.Context, s *Backend, j models.Job, result j
 	if err != nil {
 		return "", err
 	}
+	if out.Imported+out.Updated+out.Removed > 0 {
+		s.pushStrengthLevelAfterScale(ctx, u)
+	}
 	b, err := json.Marshal(out)
 	return string(b), err
 }

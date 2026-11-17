@@ -317,6 +317,9 @@ func (s *Backend) apiRoutes(mux *http.ServeMux) {
 			apiError(w, err)
 			return
 		}
+		if n > 0 {
+			s.pushStrengthLevelAfterScale(r.Context(), u)
+		}
 		writeJSON(w, http.StatusOK, map[string]int{"upserted": n})
 	}))
 

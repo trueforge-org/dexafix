@@ -61,6 +61,9 @@ type slDayPayload struct {
 	Day string `json:"day"`
 }
 
+// strengthLevelPushDays is how many days the automatic push after new scale data sends.
+const strengthLevelPushDays = 7
+
 type slSyncPayload struct {
 	Days   int  `json:"days"`
 	Update bool `json:"update,omitempty"`
@@ -209,6 +212,9 @@ func leaseStrengthLevelSync(ctx context.Context, s *Backend, j models.Job) (any,
 	if err := json.Unmarshal([]byte(j.Payload), &in); err != nil || in.Days < 1 || in.Days > strengthLevelMaxDays {
 		return nil, permanent(errors.New("unreadable job"))
 	}
+	if j.Origin == models.JobOriginAuto && !(u.StrengthLevelPushAllowed && u.StrengthLevelPush) {
+		return nil, permanent(errors.New("the automatic send to Strength Level was switched off")) // after it was queued
+	}
 	est, err := s.computeEstimates(ctx, u)
 	if err != nil {
 		return nil, err
@@ -217,6 +223,31 @@ func leaseStrengthLevelSync(ctx context.Context, s *Backend, j models.Job) (any,
 		Login: login, Entries: entriesFromEstimates(est.Days), Update: in.Update,
 		Since: time.Now().UTC().AddDate(0, 0, -in.Days).Format(dateLayout),
 	}, nil
+}
+
+// pushStrengthLevelAfterScale sends the last days to Strength Level, overwriting what is there,
+// after a user's scale data changed. It does nothing unless an administrator allowed it, the user
+// switched it on and their Strength Level login is saved. The job is queued, not waited for, and a
+// failure is only logged: the data was stored already. Jobs queued before the first one ran are
+// merged into it, because the estimates are computed when the job starts.
+func (s *Backend) pushStrengthLevelAfterScale(ctx context.Context, u models.User) {
+	if !(u.StrengthLevelAuto && u.StrengthLevelPushAllowed && u.StrengthLevelPush) {
+		return
+	}
+	if _, err := s.store.GetIntegration(ctx, u.ID, strengthLevelProvider); err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			log.Error().Err(err).Int64("user", u.ID).Msg("automatic Strength Level send: read the login")
+		}
+		return
+	}
+	_, _, err := s.enqueueJob(ctx, enqueueSpec{
+		UserID: u.ID, Kind: kindStrengthLevelSync, Origin: models.JobOriginAuto,
+		Dedupe:  fmt.Sprintf("%s:auto:%d", kindStrengthLevelSync, u.ID),
+		Payload: slSyncPayload{Days: strengthLevelPushDays, Update: true},
+	})
+	if err != nil && !errors.Is(err, errKindPaused) && !errors.Is(err, errTooManyJobs) {
+		log.Error().Err(err).Int64("user", u.ID).Msg("automatic Strength Level send: queue the job")
+	}
 }
 
 func scheduleStrengthLevelSync(ctx context.Context, s *Backend) ([]scheduleTarget, error) {

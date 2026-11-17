@@ -22,6 +22,7 @@ const (
 	JobOriginAPI      = "api"      // the public API
 	JobOriginSchedule = "schedule" // the scheduler
 	JobOriginAdmin    = "admin"    // an administrator
+	JobOriginAuto     = "auto"     // started by new data, for a user who switched that on
 )
 
 // How a worker ended an attempt.
