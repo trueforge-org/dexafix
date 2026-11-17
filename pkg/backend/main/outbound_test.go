@@ -220,11 +220,12 @@ func TestTheProviderClientTakesNoProxyFromTheEnvironment(t *testing.T) {
 	if u, err := tr.Proxy(req); err != nil || u != nil {
 		t.Fatalf("a proxy was used although private addresses are not allowed: %v %v", u, err)
 	}
-	// With private addresses allowed (an administrator's choice) the environment's proxy is back.
+	// With private addresses allowed (an administrator's choice) the environment decides, as before
+	// (http.ProxyFromEnvironment reads it once per process, so only that it asks is checked here).
 	l := *g.b.cfg()
 	l.allowPrivateProviders = true
 	g.b.swapSettings(&l)
-	if u, err := g.b.newProviderClient().Transport.(*http.Transport).Proxy(req); err != nil || u == nil {
-		t.Fatalf("the proxy of the environment is not used once private addresses are allowed: %v %v", u, err)
+	if _, err := g.b.newProviderClient().Transport.(*http.Transport).Proxy(req); err != nil {
+		t.Fatalf("%v", err)
 	}
 }
