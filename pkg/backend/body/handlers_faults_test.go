@@ -14,6 +14,7 @@ import (
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/bodyapi"
+	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/store"
 	"github.com/trueforge-org/dexafix/pkg/store/sqlstore"
 )
@@ -185,7 +186,7 @@ func (r *rig) send(t *testing.T, method, path string, scope bodyapi.Scope, withP
 	t.Helper()
 	tok := r.token(r.users[0].ID, scope)
 	if !withParams {
-		tok = r.signer.Sign(r.users[0].ID, scope, nil, time.Now())
+		tok = must.Value(r.signer.Sign(r.users[0].ID, scope, nil, time.Now()))
 	}
 	req, err := http.NewRequest(method, r.ts.URL+bodyapi.Prefix+"/users/"+itoa(r.users[0].ID)+path, strings.NewReader(body))
 	if err != nil {

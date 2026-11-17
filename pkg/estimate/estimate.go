@@ -320,6 +320,9 @@ func (s *series) at(d time.Time) (*seriesDay, bool) {
 	return &s.days[i], true
 }
 
+// MaxSeriesDays is the longest series of days one field is computed over: about 50 years.
+const MaxSeriesDays = 50 * 366
+
 // buildSeries selects the best reading per day, fills missing days and smooths the result.
 func buildSeries(byDay map[time.Time]map[group]float64, rk ranker, today time.Time) *series {
 	if len(byDay) == 0 {
@@ -330,10 +333,32 @@ func buildSeries(byDay map[time.Time]map[group]float64, rk ranker, today time.Ti
 		known = append(known, d)
 	}
 	sort.Slice(known, func(i, j int) bool { return known[i].Before(known[j]) })
+	// The series has a value for every day from the first reading to the last (or today), so one
+	// reading in year 1 would make it 700,000 days. Readings later than tomorrow and further back
+	// than MaxSeriesDays are left out: stored data from before the dates were checked cannot cost
+	// more than a normal series, and cannot push real readings out either.
+	if !today.IsZero() {
+		t := day(today)
+		lo, hi := t.Add(-(MaxSeriesDays-1)*dayDur), t.Add(dayDur)
+		kept := known[:0]
+		for _, d := range known {
+			if !d.Before(lo) && !d.After(hi) {
+				kept = append(kept, d)
+			}
+		}
+		if known = kept; len(known) == 0 {
+			return nil
+		}
+	}
 	first, last := known[0], known[len(known)-1]
 	end := last
 	if !today.IsZero() && day(today).After(end) {
 		end = day(today)
+	}
+	if cut := end.Add(-(MaxSeriesDays - 1) * dayDur); first.Before(cut) { // no today to go by: keep the latest
+		i := sort.Search(len(known), func(i int) bool { return !known[i].Before(cut) })
+		known = known[i:]
+		first = known[0]
 	}
 	n := int(end.Sub(first)/dayDur) + 1
 	s := &series{first: first, days: make([]seriesDay, n)}

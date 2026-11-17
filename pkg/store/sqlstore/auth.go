@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -107,6 +108,10 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (models.User, 
 
 func (s *Store) UpdateUserProfile(ctx context.Context, userID int64, username, firstName, lastName, email string, heightCm *float64) error {
 	username = strings.TrimSpace(username)
+	// A NaN would be stored as it is, and then no page of the user could be answered as JSON.
+	if heightCm != nil && (math.IsNaN(*heightCm) || math.IsInf(*heightCm, 0)) {
+		return fmt.Errorf("%w: height must be a number", store.ErrInvalid)
+	}
 	var current userRow
 	if err := s.db.NewSelect().Model(&current).Column("username").Where("id = ?", userID).Scan(ctx); err != nil {
 		return notFound(err)

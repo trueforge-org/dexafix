@@ -55,13 +55,17 @@ func NewSigner(priv ed25519.PrivateKey) *Signer {
 	return &Signer{kid: KeyID(priv.Public().(ed25519.PublicKey)), priv: priv}
 }
 
-// Sign makes a token for subject and scope that expires MaxTokenAge after now.
-func (s *Signer) Sign(subject int64, scope Scope, params *EstimateParams, now time.Time) string {
-	payload, _ := json.Marshal(Claims{
+// Sign makes a token for subject and scope that expires MaxTokenAge after now. It fails when the
+// parameters cannot be encoded (a NaN height): a token without them would not mean what was asked.
+func (s *Signer) Sign(subject int64, scope Scope, params *EstimateParams, now time.Time) (string, error) {
+	payload, err := json.Marshal(Claims{
 		KeyID: s.kid, Subject: subject, Audience: Audience, Scope: scope,
 		Expires: now.Add(MaxTokenAge).Unix(), Params: params,
 	})
-	return b64.EncodeToString(payload) + "." + b64.EncodeToString(ed25519.Sign(s.priv, payload))
+	if err != nil {
+		return "", err
+	}
+	return b64.EncodeToString(payload) + "." + b64.EncodeToString(ed25519.Sign(s.priv, payload)), nil
 }
 
 // Verifier checks tokens. The body service holds one, with public keys only.

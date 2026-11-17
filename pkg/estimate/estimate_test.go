@@ -721,3 +721,38 @@ func TestWithinDays(t *testing.T) {
 		t.Errorf("within 3 days of a gappy list: %d, want 2", got)
 	}
 }
+
+// Stored readings from before the dates were checked must not cost more than a normal series.
+func TestOneReadingInYearOneCostsNothing(t *testing.T) {
+	today := d(3, 1)
+	for name, at := range map[string]time.Time{
+		"year 1":    time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC),
+		"year 9999": time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC),
+		"far back":  today.AddDate(-120, 0, 0),
+	} {
+		rs := []models.ScaleReading{scaleW(at, 50), scaleW(d(2, 20), 82), scaleW(d(2, 25), 83)}
+		r := Compute(nil, rs, Options{Today: today})
+		if n := len(r.Days); n < 5 || n > 20 {
+			t.Errorf("%s: %d days in the result", name, n)
+		}
+		if got := find(t, r, d(2, 25)).Values["weight_kg"]; !near(got.V, 83) {
+			t.Errorf("%s: the real readings were pushed out: %+v", name, got)
+		}
+	}
+	// Alone, a reading that old gives nothing at all.
+	if r := Compute(nil, []models.ScaleReading{scaleW(time.Date(1, 1, 1, 0, 0, 0, 0, time.UTC), 50)}, Options{Today: today}); len(r.Days) != 0 {
+		t.Errorf("%d days from a reading in year 1", len(r.Days))
+	}
+}
+
+// Without a today to go by the series keeps the latest MaxSeriesDays.
+func TestASeriesWithoutTodayIsCapped(t *testing.T) {
+	rs := []models.ScaleReading{scaleW(time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), 50), scaleW(d(2, 20), 82), scaleW(d(2, 25), 83)}
+	r := Compute(nil, rs, Options{})
+	if n := len(r.Days); n > MaxSeriesDays || n < 6 {
+		t.Errorf("%d days", n)
+	}
+	if got := find(t, r, d(2, 25)).Values["weight_kg"]; !near(got.V, 83) {
+		t.Errorf("%+v", got)
+	}
+}

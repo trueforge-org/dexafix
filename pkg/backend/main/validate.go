@@ -75,7 +75,18 @@ func validReadingOrigin(r *models.ScaleReading) error {
 	return nil
 }
 
+// checkMeasuredAt refuses a time that cannot be real: before 1900 or after tomorrow.
+func checkMeasuredAt(t time.Time) error {
+	if !plausibleMeasurementTime(t, time.Now()) {
+		return fmt.Errorf("measured_at must be between %s and tomorrow", earliestMeasurement.Format(dateLayout))
+	}
+	return nil
+}
+
 func validScaleReading(r *models.ScaleReading) error {
+	if err := checkMeasuredAt(r.MeasuredAt); err != nil {
+		return err
+	}
 	return checkRanges(r.Notes,
 		valueRange{"weight_kg", r.WeightKg, 0.1, 1000},
 		valueRange{"fat_ratio_pct", r.FatRatioPct, 0, 100},
@@ -89,6 +100,9 @@ func validScaleReading(r *models.ScaleReading) error {
 }
 
 func validDexaScan(s *models.DexaScan) error {
+	if err := checkMeasuredAt(s.MeasuredAt); err != nil {
+		return err
+	}
 	return checkRanges(s.Notes,
 		valueRange{"weight_kg", s.WeightKg, 0.1, 1000},
 		valueRange{"fat_ratio_pct", s.FatRatioPct, 0, 100},

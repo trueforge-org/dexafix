@@ -3,6 +3,7 @@ package bodyapi
 import (
 	"context"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -163,5 +164,20 @@ func TestEveryCallCarriesTheSecretAndAFreshToken(t *testing.T) {
 	claims, err := NewVerifier(pub).Verify(token, now)
 	if err != nil || claims.Scope != ScopeAdmin {
 		t.Fatalf("claims %+v err %v", claims, err)
+	}
+}
+
+// Parameters that cannot be encoded (a NaN height) stop the call: a token without them would
+// not mean what the caller asked for.
+func TestACallWithParametersThatCannotBeSignedFails(t *testing.T) {
+	s, _ := newPair(t)
+	nan := math.NaN()
+	if tok, err := s.Sign(1, ScopeRead, &EstimateParams{HeightCm: &nan}, time.Now()); err == nil || tok != "" {
+		t.Fatalf("Sign gave %q, %v", tok, err)
+	}
+	called := false
+	c := newClientFor(t, func(w http.ResponseWriter, r *http.Request) { called = true })
+	if _, err := c.call(context.Background(), http.MethodGet, "/x", nil, 1, ScopeRead, &EstimateParams{HeightCm: &nan}, nil, nil, nil); err == nil || called {
+		t.Errorf("the call was made (%v) or went well: %v", called, err)
 	}
 }

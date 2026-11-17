@@ -54,6 +54,9 @@ func profileInvalid(err error) string {
 	if strings.Contains(err.Error(), "username") {
 		return usernameRule
 	}
+	if strings.Contains(err.Error(), "height") {
+		return "Height must be between 50 and 280 cm."
+	}
 	return "First and last name can have at most 64 characters, without control characters."
 }
 
@@ -82,7 +85,7 @@ func (s *Backend) internalProfileSave(w http.ResponseWriter, r *http.Request, u 
 	var height *float64
 	if raw := strings.TrimSpace(in.HeightCm); raw != "" {
 		v, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64)
-		if err != nil || v < minHeightCm || v > maxHeightCm {
+		if err != nil || !(v >= minHeightCm && v <= maxHeightCm) { // written so that NaN fails too
 			invalid("Height must be between 50 and 280 cm.")
 			return
 		}

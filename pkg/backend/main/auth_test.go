@@ -271,6 +271,9 @@ func TestProfile(t *testing.T) {
 		"empty name":  {"username": {" "}, "email": ok["email"]},
 		"bad height":  {"username": {"Al"}, "email": ok["email"], "height_cm": {"20"}},
 		"text height": {"username": {"Al"}, "email": ok["email"], "height_cm": {"tall"}},
+		"NaN height":  {"username": {"Al"}, "email": ok["email"], "height_cm": {"NaN"}},
+		"Inf height":  {"username": {"Al"}, "email": ok["email"], "height_cm": {"+Inf"}},
+		"-Inf height": {"username": {"Al"}, "email": ok["email"], "height_cm": {"-Inf"}},
 	} {
 		if r := post(t, c, ts.URL+"/u/1/profile", form); r.StatusCode != 422 {
 			t.Errorf("%s: %d", name, r.StatusCode)

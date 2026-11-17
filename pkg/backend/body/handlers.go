@@ -26,11 +26,18 @@ const (
 )
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	var body []byte
+	if v != nil {
+		var err error
+		if body, err = json.Marshal(v); err != nil { // an error, not an empty 200
+			status = http.StatusInternalServerError
+			body = []byte(`{"code":"` + bodyapi.CodeInternal + `","message":"the answer could not be encoded"}`)
+		}
+		body = append(body, '\n')
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if v != nil {
-		_ = json.NewEncoder(w).Encode(v)
-	}
+	w.Write(body)
 }
 
 func fail(w http.ResponseWriter, code, msg string) {

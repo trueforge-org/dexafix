@@ -197,7 +197,7 @@
 <div class="scroll"><table>
   <thead><tr><th>Field</th><th>JSON key</th><th>Unit</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td>Date</td><td><code>measured_at</code></td><td>date</td><td>Required. In the API an RFC 3339 timestamp; its date in your time zone is used. Scans are matched to scale readings by the reading's day in your time zone.</td></tr>
+    <tr><td>Date</td><td><code>measured_at</code></td><td>date</td><td>Required, from 1900-01-01 to tomorrow. In the API an RFC 3339 timestamp; its date in your time zone is used. Scans are matched to scale readings by the reading's day in your time zone.</td></tr>
     <tr><td>Weight</td><td><code>weight_kg</code></td><td>kg</td><td>Total body weight. Used as the estimate on the scan day but never corrected.</td></tr>
     <tr><td>Body fat</td><td><code>fat_ratio_pct</code></td><td>%</td><td>Body fat percentage. Calibrates the scale's body fat %. If left out but fat mass and weight are known, it is calculated as fat mass / weight x 100.</td></tr>
     <tr><td>Fat mass</td><td><code>fat_mass_kg</code></td><td>kg</td><td>Total fat mass.</td></tr>
@@ -224,7 +224,7 @@
 <div class="scroll"><table>
   <thead><tr><th>Field</th><th>JSON key</th><th>Unit</th><th>Meaning</th></tr></thead>
   <tbody>
-    <tr><td>Date &amp; time</td><td><code>measured_at</code></td><td>your time zone</td><td>Required. Several readings on one day (in your time zone) are averaged per method. The API takes an RFC 3339 timestamp.</td></tr>
+    <tr><td>Date &amp; time</td><td><code>measured_at</code></td><td>your time zone</td><td>Required, from 1900-01-01 to tomorrow. Several readings on one day (in your time zone) are averaged per method. The API takes an RFC 3339 timestamp.</td></tr>
     <tr><td>Method</td><td><code>method</code></td><td>see below</td><td>Default <code>scale</code>.</td></tr>
     <tr><td>Athlete mode</td><td><code>athlete_mode</code></td><td>yes/no</td><td>Defaults to your Settings default when left out in the API.</td></tr>
     <tr><td>Weight</td><td><code>weight_kg</code></td><td>kg</td><td></td></tr>

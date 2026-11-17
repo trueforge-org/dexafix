@@ -3,6 +3,8 @@ package sqlstore
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
 	"os"
 	"strings"
 	"testing"
@@ -154,3 +156,68 @@ func TestAProfileSaveThatTheDatabaseRefusesFails(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestAProfileWithAHeightThatIsNotANumberIsRefused(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	u, err := s.CreateUser(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		if err := s.UpdateUserProfile(ctx, u.ID, "alice", "", "", "alice@example.com", &v); !errors.Is(err, store.ErrInvalid) {
+			t.Errorf("height %v: %v", v, err)
+		}
+	}
+	h := 180.0
+	if err := s.UpdateUserProfile(ctx, u.ID, "alice", "", "", "alice@example.com", &h); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A database from before the height was checked may hold one that is not a number, or not a height.
+// The upgrade clears those and keeps the others.
+func TestMigrationClearsHeightsThatAreNotHeights(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	if _, err := s.MigrateTo(ctx, 3); err != nil {
+		t.Fatal(err)
+	}
+	nan := "'NaN'"
+	if s.driver == DriverPostgres {
+		nan = "CAST('NaN' AS DOUBLE PRECISION)"
+	}
+	now := time.Now().UTC()
+	heights := map[int64]string{21: nan, 22: "180.5", 23: "5", 24: "500", 25: "NULL", 26: "50", 27: "280"}
+	for id, h := range heights {
+		if _, err := s.db.ExecContext(ctx, fmt.Sprintf("INSERT INTO users (id, username, created_at, height_cm) VALUES (%d, 'user%d', ?, %s)", id, id, h), now); err != nil {
+			t.Fatalf("insert %d at version 3: %v", id, err)
+		}
+	}
+	if _, err := s.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	for id, want := range map[int64]*float64{21: nil, 22: ptr(180.5), 23: nil, 24: nil, 25: nil, 26: ptr(50), 27: ptr(280)} {
+		u, err := s.GetUser(ctx, id)
+		if err != nil {
+			t.Fatalf("user %d: %v", id, err)
+		}
+		if (u.HeightCm == nil) != (want == nil) || (want != nil && *u.HeightCm != *want) {
+			t.Errorf("user %d: height %v, want %v", id, u.HeightCm, want)
+		}
+	}
+	if s.driver == DriverPostgres {
+		if _, err := s.db.ExecContext(ctx, "UPDATE users SET height_cm = CAST('NaN' AS DOUBLE PRECISION) WHERE id = 22"); err == nil {
+			t.Error("PostgreSQL stored a NaN height after the upgrade")
+		}
+	}
+	// And back down, and up again.
+	if _, err := s.MigrateTo(ctx, 3); err != nil {
+		t.Fatalf("down: %v", err)
+	}
+	if _, err := s.Migrate(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
+}
+
+func ptr(v float64) *float64 { return &v }

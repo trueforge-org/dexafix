@@ -91,8 +91,12 @@ func (c *Client) call(ctx context.Context, method, path string, q url.Values, su
 	for k, v := range header {
 		req.Header[k] = v
 	}
+	token, err := c.signer.Sign(subject, scope, params, c.now())
+	if err != nil {
+		return nil, fmt.Errorf("sign the token for the body service: %w", err)
+	}
 	req.Header.Set(HeaderSecret, c.secret)
-	req.Header.Set(HeaderToken, c.signer.Sign(subject, scope, params, c.now()))
+	req.Header.Set(HeaderToken, token)
 	if in != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

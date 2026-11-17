@@ -18,6 +18,7 @@ import (
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/bodyapi"
 	"github.com/trueforge-org/dexafix/pkg/shared/mtls"
+	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/store/sqlstore"
 )
 
@@ -158,7 +159,7 @@ func TestSecretsBodyTokenKeyAndPublic(t *testing.T) {
 		t.Error("the public key does not belong to the private one")
 	}
 	now := time.Now()
-	if _, err := bodyapi.NewVerifier(pubs[0]).Verify(bodyapi.NewSigner(priv).Sign(7, bodyapi.ScopeRead, nil, now), now); err != nil {
+	if _, err := bodyapi.NewVerifier(pubs[0]).Verify(must.Value(bodyapi.NewSigner(priv).Sign(7, bodyapi.ScopeRead, nil, now)), now); err != nil {
 		t.Errorf("a token of the key does not verify: %v", err)
 	}
 	// Two keys differ, and a missing file is refused.

@@ -112,12 +112,22 @@ func (s *Backend) visitorContext(next http.Handler) http.Handler {
 
 // ---- answering ----
 
+// internalJSON answers with v as JSON. The value is encoded first: one that cannot be (a NaN, say)
+// is a 500, not a 200 with an empty body that the caller cannot tell from success.
 func internalJSON(w http.ResponseWriter, status int, v any) {
+	var body []byte
+	if v != nil {
+		var err error
+		if body, err = json.Marshal(v); err != nil {
+			log.Error().Err(err).Msg("could not encode an answer")
+			status = http.StatusInternalServerError
+			body = []byte(`{"status":500,"code":"` + apiclient.CodeInternal + `","message":"the answer could not be encoded"}`)
+		}
+		body = append(body, '\n')
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if v != nil {
-		json.NewEncoder(w).Encode(v)
-	}
+	w.Write(body)
 }
 
 // internalFail answers with an error the frontend shows as it is: message is fit for the person.

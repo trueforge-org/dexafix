@@ -49,7 +49,8 @@ endpoints always return everything.
 Batch readings with an `external_id` are upserted on `source` and
 `external_id`, so repeated imports do not duplicate. Readings without a
 `source` get `manual`. A `source` is 1 to 32 characters of `a-z`, `0-9`, `_` and
-`-`; an `external_id` is at most 128 characters; `measured_at` is required. A
+`-`; an `external_id` is at most 128 characters; `measured_at` is required and
+lies between 1900-01-01 and tomorrow (the same for scans). A
 batch that breaks one of these is refused as a whole with a 400 that names the
 item. Do not use the name of a provider (`withings`) for readings of your own: the
 next import from that provider treats them as its own and may replace them.

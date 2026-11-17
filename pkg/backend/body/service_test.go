@@ -12,6 +12,7 @@ import (
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/bodyapi"
+	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/store"
 	"github.com/trueforge-org/dexafix/pkg/store/sqlstore"
 )
@@ -85,7 +86,7 @@ func (r *rig) do(t *testing.T, method, path string, header map[string]string, bo
 }
 
 func (r *rig) token(subject int64, scope bodyapi.Scope) string {
-	return r.signer.Sign(subject, scope, &bodyapi.EstimateParams{Timezone: "UTC"}, time.Now())
+	return must.Value(r.signer.Sign(subject, scope, &bodyapi.EstimateParams{Timezone: "UTC"}, time.Now()))
 }
 
 func TestEveryCallNeedsTheSecretAndAValidToken(t *testing.T) {
@@ -105,9 +106,9 @@ func TestEveryCallNeedsTheSecretAndAValidToken(t *testing.T) {
 		"wrong secret":       {bodyapi.HeaderSecret: "nope", bodyapi.HeaderToken: good[bodyapi.HeaderToken]},
 		"no token":           {bodyapi.HeaderSecret: testSecret},
 		"garbage token":      {bodyapi.HeaderSecret: testSecret, bodyapi.HeaderToken: "x.y"},
-		"untrusted key":      {bodyapi.HeaderSecret: testSecret, bodyapi.HeaderToken: expired.Sign(uid, bodyapi.ScopeRead, nil, time.Now())},
-		"expired token":      {bodyapi.HeaderSecret: testSecret, bodyapi.HeaderToken: r.signer.Sign(uid, bodyapi.ScopeRead, nil, time.Now().Add(-time.Hour))},
-		"token made to last": {bodyapi.HeaderSecret: testSecret, bodyapi.HeaderToken: r.signer.Sign(uid, bodyapi.ScopeRead, nil, time.Now().Add(time.Hour))},
+		"untrusted key":      {bodyapi.HeaderSecret: testSecret, bodyapi.HeaderToken: must.Value(expired.Sign(uid, bodyapi.ScopeRead, nil, time.Now()))},
+		"expired token":      {bodyapi.HeaderSecret: testSecret, bodyapi.HeaderToken: must.Value(r.signer.Sign(uid, bodyapi.ScopeRead, nil, time.Now().Add(-time.Hour)))},
+		"token made to last": {bodyapi.HeaderSecret: testSecret, bodyapi.HeaderToken: must.Value(r.signer.Sign(uid, bodyapi.ScopeRead, nil, time.Now().Add(time.Hour)))},
 	} {
 		if resp := r.do(t, "GET", path, h, ""); resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s: status %d, want 401", name, resp.StatusCode)
@@ -417,7 +418,7 @@ func TestReconcileThroughTheClientIsIdempotentAndFollowsTheTokensSettings(t *tes
 func TestSettingsCallsNeedTheTokensSettings(t *testing.T) {
 	r := newRig(t)
 	uid := r.users[0].ID
-	noParams := r.signer.Sign(uid, bodyapi.ScopeWrite, nil, time.Now())
+	noParams := must.Value(r.signer.Sign(uid, bodyapi.ScopeWrite, nil, time.Now()))
 	h := map[string]string{bodyapi.HeaderSecret: testSecret, bodyapi.HeaderToken: noParams}
 	if resp := r.do(t, "GET", "/users/"+itoa(uid)+"/estimates", h, ""); resp.StatusCode != http.StatusBadRequest {
 		t.Errorf("estimates without settings: %d", resp.StatusCode)

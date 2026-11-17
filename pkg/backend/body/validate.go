@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 )
@@ -34,7 +35,24 @@ func checkRanges(notes string, rs ...valueRange) error {
 	return nil
 }
 
+// earliestMeasurement and measurementAhead bound when a reading or a scan may have been taken: a
+// date in year 1 or 9999 makes the estimates allocate a series of every day in between.
+var earliestMeasurement = time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)
+
+const measurementAhead = 24 * time.Hour
+
+// checkMeasuredAt refuses a time that cannot be real: before 1900 or after tomorrow.
+func checkMeasuredAt(t time.Time) error {
+	if t.Before(earliestMeasurement) || t.After(time.Now().Add(measurementAhead)) {
+		return fmt.Errorf("measured_at must be between %s and tomorrow", earliestMeasurement.Format("2006-01-02"))
+	}
+	return nil
+}
+
 func validScaleReading(r *models.ScaleReading) error {
+	if err := checkMeasuredAt(r.MeasuredAt); err != nil {
+		return err
+	}
 	return checkRanges(r.Notes,
 		valueRange{"weight_kg", r.WeightKg, 0.1, 1000},
 		valueRange{"fat_ratio_pct", r.FatRatioPct, 0, 100},
@@ -48,6 +66,9 @@ func validScaleReading(r *models.ScaleReading) error {
 }
 
 func validDexaScan(s *models.DexaScan) error {
+	if err := checkMeasuredAt(s.MeasuredAt); err != nil {
+		return err
+	}
 	return checkRanges(s.Notes,
 		valueRange{"weight_kg", s.WeightKg, 0.1, 1000},
 		valueRange{"fat_ratio_pct", s.FatRatioPct, 0, 100},

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/trueforge-org/dexafix/pkg/shared/must"
 )
 
 func newPair(t *testing.T) (*Signer, ed25519.PublicKey) {
@@ -20,7 +22,7 @@ func TestTokenRoundTrip(t *testing.T) {
 	now := time.Now()
 	h := 181.5
 	params := &EstimateParams{Timezone: "Europe/Amsterdam", Ranking: []string{"dexa", "scale"}, AthleteDefault: true, HeightCm: &h}
-	c, err := NewVerifier(pub).Verify(s.Sign(42, ScopeWrite, params, now), now)
+	c, err := NewVerifier(pub).Verify(must.Value(s.Sign(42, ScopeWrite, params, now)), now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +37,7 @@ func TestTokenRefusals(t *testing.T) {
 	other, otherPub := newPair(t)
 	now := time.Now()
 	v := NewVerifier(pub)
-	good := s.Sign(1, ScopeRead, nil, now)
+	good := must.Value(s.Sign(1, ScopeRead, nil, now))
 
 	for name, tc := range map[string]struct {
 		token string
@@ -45,12 +47,12 @@ func TestTokenRefusals(t *testing.T) {
 		"from the future":            {good, now.Add(-time.Minute)},
 		"empty":                      {"", now},
 		"no separator":               {strings.ReplaceAll(good, ".", ""), now},
-		"signed by another key":      {other.Sign(1, ScopeRead, nil, now), now},
+		"signed by another key":      {must.Value(other.Sign(1, ScopeRead, nil, now)), now},
 		"tampered subject":           {tamper(t, good, `"sub":1`, `"sub":2`), now},
 		"tampered scope":             {tamper(t, good, `"scope":"read"`, `"scope":"admin"`), now},
 		"garbage":                    {"abc.def", now},
 		"signature not base64":       {strings.SplitN(good, ".", 2)[0] + ".!!!", now},
-		"signature of another token": {strings.SplitN(good, ".", 2)[0] + "." + strings.SplitN(s.Sign(2, ScopeRead, nil, now), ".", 2)[1], now},
+		"signature of another token": {strings.SplitN(good, ".", 2)[0] + "." + strings.SplitN(must.Value(s.Sign(2, ScopeRead, nil, now)), ".", 2)[1], now},
 	} {
 		if _, err := v.Verify(tc.token, tc.at); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -61,7 +63,7 @@ func TestTokenRefusals(t *testing.T) {
 	if _, err := NewVerifier(otherPub).Verify(good, now); err == nil {
 		t.Error("a token was accepted under a key that did not sign it")
 	}
-	if _, err := NewVerifier(pub, otherPub).Verify(other.Sign(1, ScopeRead, nil, now), now); err != nil {
+	if _, err := NewVerifier(pub, otherPub).Verify(must.Value(other.Sign(1, ScopeRead, nil, now)), now); err != nil {
 		t.Errorf("two trusted keys: %v", err)
 	}
 }
@@ -72,7 +74,7 @@ func TestTokenWithLongLifetimeIsRefused(t *testing.T) {
 	_, pub, priv := GenerateKey()
 	now := time.Now()
 	long := NewSigner(priv)
-	token := long.Sign(1, ScopeRead, nil, now.Add(time.Hour)) // exp is an hour and a minute away
+	token := must.Value(long.Sign(1, ScopeRead, nil, now.Add(time.Hour))) // exp is an hour and a minute away
 	if _, err := NewVerifier(pub).Verify(token, now); err == nil {
 		t.Error("a token that lives for over an hour was accepted")
 	}
@@ -82,7 +84,7 @@ func TestWrongAudienceIsRefused(t *testing.T) {
 	_, pub, priv := GenerateKey()
 	now := time.Now()
 	s := NewSigner(priv)
-	token := s.Sign(1, ScopeRead, nil, now)
+	token := must.Value(s.Sign(1, ScopeRead, nil, now))
 	// Re-sign a payload that names another audience with the same trusted key.
 	bad := signRaw(t, priv, `{"kid":"`+KeyID(pub)+`","sub":1,"aud":"somebody else","scope":"read","exp":`+itoa(now.Add(time.Minute).Unix())+`}`)
 	if _, err := NewVerifier(pub).Verify(token, now); err != nil {
@@ -155,7 +157,7 @@ func TestKeyFilesRoundTrip(t *testing.T) {
 	}
 	// The public key made from the private one verifies its tokens.
 	now := time.Now()
-	if _, err := NewVerifier(pubs[0]).Verify(NewSigner(got).Sign(1, ScopeRead, nil, now), now); err != nil {
+	if _, err := NewVerifier(pubs[0]).Verify(must.Value(NewSigner(got).Sign(1, ScopeRead, nil, now)), now); err != nil {
 		t.Errorf("a token of the parsed key: %v", err)
 	}
 	for name, text := range map[string]string{"empty": "", "two keys": EncodePrivateKey(priv) + "\n" + EncodePrivateKey(priv), "no label": "AAAA", "damaged": privateLabel + "AAAA"} {
