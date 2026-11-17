@@ -18,7 +18,6 @@ import (
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
 	"github.com/trueforge-org/dexafix/pkg/shared/bodyapi"
-	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/shared/tlsutil"
 	"github.com/trueforge-org/dexafix/pkg/store"
 )
@@ -214,7 +213,11 @@ func (s *Backend) internalAdminAddUser(w http.ResponseWriter, r *http.Request, _
 		adminMsg(w, msg)
 		return
 	}
-	hash := must.Value(hashPassword(in.Password)) // the password was just checked to fit bcrypt's limit
+	hash, err := s.hashInSlot(r.Context(), in.Password) // the password was just checked to fit bcrypt's limit
+	if err != nil {
+		internalError(w, err)
+		return
+	}
 	u, err := s.createUserWithIdentity(r.Context(), in.Username, email, models.Identity{Provider: models.ProviderLocal, Secret: hash})
 	switch {
 	case errors.Is(err, store.ErrUsernameTaken):

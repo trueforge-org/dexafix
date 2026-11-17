@@ -6,7 +6,6 @@ import (
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
-	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/store"
 )
 
@@ -79,7 +78,7 @@ func (s *Backend) internalLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if errors.Is(err, errBusy) {
-		signInFail(w, "The server is busy. Please try again in a moment.", http.StatusServiceUnavailable)
+		signInFail(w, busyMessage, http.StatusServiceUnavailable)
 		return
 	}
 	if err != nil {
@@ -123,13 +122,19 @@ func (s *Backend) internalSignup(w http.ResponseWriter, r *http.Request) {
 		signInFail(w, msg, http.StatusUnprocessableEntity)
 		return
 	}
-	hash := must.Value(hashPassword(in.Password)) // cannot fail: validatePassword capped the length at bcrypt's limit
+	// Every sign-up attempt that gets this far counts against the address, not only the ones that
+	// find a registered e-mail address: hashing is expensive, and so is creating accounts.
+	s.limiter.Fail(r.Context(), ipKey(r))
+	hash, err := s.hashInSlot(r.Context(), in.Password) // validatePassword capped the length at bcrypt's limit
+	if errors.Is(err, errBusy) {
+		signInFail(w, busyMessage, http.StatusServiceUnavailable)
+		return
+	}
 	u, err := s.createUserWithIdentity(r.Context(), in.Username, email, models.Identity{Provider: models.ProviderLocal, Secret: hash})
 	switch {
 	case errors.Is(err, store.ErrUsernameTaken):
 		signInFail(w, usernameTaken, http.StatusUnprocessableEntity)
 	case errors.Is(err, store.ErrExists):
-		s.limiter.Fail(r.Context(), ipKey(r)) // repeated probing for registered addresses is throttled
 		signInFail(w, "An account with that e-mail address already exists.", http.StatusUnprocessableEntity)
 	case errors.Is(err, store.ErrInvalid):
 		signInFail(w, usernameRule, http.StatusUnprocessableEntity)

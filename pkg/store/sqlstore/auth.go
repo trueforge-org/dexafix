@@ -156,14 +156,40 @@ func (s *Store) UpdateUserTimezone(ctx context.Context, userID int64, timezone s
 	return nil
 }
 
+// adminLockKey is the advisory lock that keeps changes to the set of administrators apart on
+// PostgreSQL. (Provisioning uses 7274707.)
+const adminLockKey = 7274708
+
+// lockAdmins takes the lock for the rest of the transaction. At read committed two transactions
+// that each see "another administrator exists" could otherwise both remove one, or two first
+// sign-ups could both become the administrator. SQLite writes are serialised and need none.
+func (s *Store) lockAdmins(ctx context.Context, tx bun.Tx) error {
+	if s.driver != DriverPostgres {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(?)", adminLockKey)
+	return err
+}
+
 // guarded runs a statement that affects no row when the guard fails, and tells a missing user
 // from a refused change afterwards.
 func (s *Store) guarded(ctx context.Context, userID int64, query string, args ...any) error {
-	res, err := s.db.ExecContext(ctx, query, args...)
+	var changed int64
+	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := s.lockAdmins(ctx, tx); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx, query, args...)
+		if err != nil {
+			return err
+		}
+		changed, _ = res.RowsAffected()
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n > 0 {
+	if changed > 0 {
 		return nil
 	}
 	if _, err := s.GetUser(ctx, userID); err != nil {
@@ -187,6 +213,9 @@ func (s *Store) SetUserRole(ctx context.Context, userID int64, role string) erro
 func (s *Store) DeleteUser(ctx context.Context, userID int64) error {
 	refused := errors.New("delete refused")
 	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := s.lockAdmins(ctx, tx); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `UPDATE audit_log SET ip = '' WHERE actor_id = ? OR target_id = ?`, userID, userID); err != nil {
 			return err
 		}

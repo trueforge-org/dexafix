@@ -788,9 +788,9 @@ func TestAPasskeySignInDoesNotClearTheFailuresOfTheAddress(t *testing.T) {
 	pkRegister(t, site, uid, sess, "Laptop", testPassword, k)
 	handle := pkHandle(t, srv, uid)
 
-	// Somebody guesses from this address, one short of the limit ...
+	// Somebody guesses from this address, one short of the limit (the sign-up above counted once) ...
 	_, bad := pkBeginLogin(t, site)
-	for i := 0; i < maxIPFail-1; i++ {
+	for i := 0; i < maxIPFail-2; i++ {
 		if resp, body := site.postJSON(t, "/passkey/login/finish", "{}", bad); resp.StatusCode != 401 {
 			t.Fatalf("failure %d: %d %s", i+1, resp.StatusCode, body)
 		}

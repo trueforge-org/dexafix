@@ -14,7 +14,6 @@ import (
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
-	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/store"
 )
 
@@ -329,7 +328,11 @@ func (s *Backend) internalReset(w http.ResponseWriter, r *http.Request) {
 		}
 		s.limiter.Reset(r.Context(), mfaKey(u.ID))
 	}
-	hash := must.Value(hashPassword(in.Password)) // cannot fail: validatePassword capped the length at bcrypt's limit
+	hash, err := s.hashInSlot(ctx, in.Password) // validatePassword capped the length at bcrypt's limit
+	if err != nil {
+		internalError(w, err)
+		return
+	}
 	// The reset signs the user out everywhere. The sessions table is emptied by CompletePasswordReset
 	// itself; in Valkey it is done here first, and the reset fails if it cannot be.
 	if err := s.sessions.DeleteUserSessions(ctx, u.ID); err != nil {

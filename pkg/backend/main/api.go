@@ -13,7 +13,6 @@ import (
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/bodyapi"
-	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/store"
 )
 
@@ -52,6 +51,8 @@ func apiError(w http.ResponseWriter, err error) {
 	case errors.Is(err, bodyapi.ErrUnavailable):
 		log.Warn().Err(err).Msg("the body service is unavailable")
 		status, msg = http.StatusServiceUnavailable, "the readings and scans are unavailable, try again shortly"
+	case errors.Is(err, errBusy):
+		status, msg = http.StatusServiceUnavailable, busyMessage
 	default:
 		log.Error().Err(err).Msg("api request failed")
 	}
@@ -201,8 +202,10 @@ func (s *Backend) apiRoutes(mux *http.ServeMux) {
 				badRequest(w, msg)
 				return
 			}
-			hash := must.Value(hashPassword(in.Password)) // the password was just checked to fit bcrypt's limit
-			u, err = s.createUserWithIdentity(r.Context(), in.Username, email, models.Identity{Provider: models.ProviderLocal, Secret: hash})
+			var hash string
+			if hash, err = s.hashInSlot(r.Context(), in.Password); err == nil { // the password was just checked to fit bcrypt's limit
+				u, err = s.createUserWithIdentity(r.Context(), in.Username, email, models.Identity{Provider: models.ProviderLocal, Secret: hash})
+			}
 		}
 		if err != nil {
 			apiError(w, err)

@@ -153,6 +153,8 @@ func internalError(w http.ResponseWriter, err error) {
 	case errors.Is(err, bodyapi.ErrUnavailable):
 		log.Warn().Err(err).Msg("the body service is unavailable")
 		internalFail(w, http.StatusServiceUnavailable, apiclient.CodeUnavailable, "the readings and scans are unavailable, try again shortly")
+	case errors.Is(err, errBusy):
+		internalFail(w, http.StatusServiceUnavailable, apiclient.CodeUnavailable, busyMessage)
 	default:
 		log.Error().Err(err).Msg("internal request failed")
 		internalFail(w, http.StatusInternalServerError, apiclient.CodeInternal, "internal error")

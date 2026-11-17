@@ -325,18 +325,42 @@ func (s *Backend) verifyPassword(ctx context.Context, login, password string) (m
 		return models.User{}, false, nil
 	}
 	if cost, err := bcrypt.Cost([]byte(id.Secret)); err == nil && cost < bcryptCost {
-		if err := s.setPassword(ctx, u.ID, password); err != nil { // best effort: the sign-in succeeded
+		// Best effort: the sign-in succeeded. This runs inside the password slot already.
+		if hash, err := hashPassword(password); err != nil {
+			log.Warn().Err(err).Msg("upgrade password hash")
+		} else if err := s.storePassword(ctx, u.ID, hash); err != nil {
 			log.Warn().Err(err).Msg("upgrade password hash")
 		}
 	}
 	return u, true, nil
 }
 
+// busyMessage is what a person is told when every password slot is taken.
+const busyMessage = "The server is busy. Please try again in a moment."
+
+// hashInSlot hashes a password inside one of the few password slots. Hashing costs as much CPU as
+// checking does, so a flood of sign-ups or password changes must not be able to use all of it; it
+// fails with errBusy when every slot stays taken.
+func (s *Backend) hashInSlot(ctx context.Context, password string) (string, error) {
+	release, ok := s.bcryptSlot(ctx)
+	if !ok {
+		return "", errBusy
+	}
+	defer release()
+	return hashPassword(password)
+}
+
+// setPassword hashes the password (in a slot) and stores it. A caller that already holds a slot
+// uses storePassword with a hash it made itself: the slots are not re-entrant.
 func (s *Backend) setPassword(ctx context.Context, userID int64, password string) error {
-	hash, err := hashPassword(password)
+	hash, err := s.hashInSlot(ctx, password)
 	if err != nil {
 		return err
 	}
+	return s.storePassword(ctx, userID, hash)
+}
+
+func (s *Backend) storePassword(ctx context.Context, userID int64, hash string) error {
 	if err := s.store.PutIdentity(ctx, models.Identity{UserID: userID, Provider: models.ProviderLocal, Subject: localSubject(userID), Secret: hash}); err != nil {
 		return err
 	}

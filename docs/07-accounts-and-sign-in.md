@@ -307,7 +307,10 @@ from all addresses together and 60 per client address in 15 minutes, after which
 sign-in answers 429. A login name can therefore be locked for the address that
 typed it wrong, not for its owner at another address. A login name longer than an
 e-mail address (254 characters) is refused at once and counts against the client
-address only. The address is the
+address only. Every sign-up attempt counts against the client address too, and
+hashing a new password (sign-up, a password change, an account added by an
+administrator, a reset) waits for one of the few password slots like a check does:
+a busy server answers 503. The address is the
 visitor's: behind a reverse proxy, set **Trusted proxies** on the Admin page (see
 [Running behind a reverse proxy](03-reverse-proxy.md)), or everyone
 shares the proxy's address and its count. Limit sign-in attempts at the proxy as

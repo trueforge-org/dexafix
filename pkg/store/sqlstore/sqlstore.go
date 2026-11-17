@@ -363,6 +363,9 @@ func (s *Store) createUser(ctx context.Context, username, email string, id *mode
 	email = models.NormalizeEmail(email)
 	var row userRow
 	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		if err := s.lockAdmins(ctx, tx); err != nil { // two first sign-ups must not both become the administrator
+			return err
+		}
 		n, err := tx.NewSelect().Model((*userRow)(nil)).Count(ctx)
 		if err != nil {
 			return err

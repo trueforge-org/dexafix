@@ -57,8 +57,8 @@ func TestALoginLongerThanAnAddressCanBeIsRefusedBeforeItIsCounted(t *testing.T) 
 	}
 	// It does cost the address, so a flood of them from one place is stopped.
 	req := &http.Request{RemoteAddr: "192.0.2.10:1"}
-	if n, _ := g.b.limiter.st.CountFailures(ctx, ipKey(req), since); n != 3 {
-		t.Errorf("the address was charged %d times, want 3", n)
+	if n, _ := g.b.limiter.st.CountFailures(ctx, ipKey(req), since); n != 3+1 { // and the sign-up above
+		t.Errorf("the address was charged %d times, want 3 and the sign-up", n)
 	}
 	// And the longest login an address can be still goes through the normal path.
 	ok := strings.Repeat("a", maxEmailLen-len("@example.com")) + "@example.com"
