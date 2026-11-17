@@ -39,3 +39,28 @@ func TestCopyFailsWhenASequenceCannotBeReset(t *testing.T) {
 		t.Fatalf("rows left after the failed copy: %d, %v", n, err)
 	}
 }
+
+// Copying from PostgreSQL reads the source in one repeatable-read, read-only transaction.
+func TestCopyFromPostgreSQLReadsASnapshot(t *testing.T) {
+	ctx := context.Background()
+	src := newStore(t)
+	if src.driver != DriverPostgres {
+		t.Skip("PostgreSQL only")
+	}
+	u, err := src.CreateUser(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dst, err := Open(ctx, DriverSQLite, "file:"+filepath.Join(t.TempDir(), "dst.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dst.Close()
+	stats, err := Copy(ctx, src, dst)
+	if err != nil || stats.Users != 1 {
+		t.Fatalf("%+v %v", stats, err)
+	}
+	if got, err := dst.GetUser(ctx, u.ID); err != nil || got.Username != "alice" {
+		t.Fatalf("%+v %v", got, err)
+	}
+}
