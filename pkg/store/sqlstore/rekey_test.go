@@ -4,9 +4,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/uptrace/bun"
+
+	"github.com/trueforge-org/dexafix/pkg/models"
+	"github.com/trueforge-org/dexafix/pkg/store"
 )
 
 func keyOf(fill byte) []byte { return bytes.Repeat([]byte{fill}, KeySize) }
@@ -194,5 +202,90 @@ func TestRekeyFailureLeavesDatabaseUntouched(t *testing.T) {
 	cancel()
 	if _, err := s.Rekey(cancelled, false); err == nil {
 		t.Error("cancelled context succeeded")
+	}
+}
+
+// A row that was written after it was read is not put back as it was: for a refresh token that works
+// once, that would lose it.
+func TestRekeyRefusesToOverwriteARowThatChangedAfterItWasRead(t *testing.T) {
+	ctx := context.Background()
+	s := openFile(t, filepath.Join(t.TempDir(), "a.db"), WithCipher(cipherWith(t, 1)))
+	u := fillSensitive(t, s)
+	stale := rawColumn(t, s, rawIntegration)
+	if err := s.PutIntegration(ctx, u.ID, "withings", []byte(`{"refresh_token":"newer"}`)); err != nil { // somebody wrote meanwhile
+		t.Fatal(err)
+	}
+	err := exactlyOne(ctx, s.db.NewUpdate().Model((*integrationRow)(nil)).Set("data = ?", "x").
+		Where("user_id = ?", u.ID).Where("provider = ?", "withings").Where("data = ?", stale), "an integration")
+	if err == nil || !strings.Contains(err.Error(), "changed while the keys were being replaced") {
+		t.Fatalf("a stale update went through: %v", err)
+	}
+	got, err := s.GetIntegration(ctx, u.ID, "withings")
+	if err != nil || !strings.Contains(string(got), "newer") {
+		t.Fatalf("the newer value was overwritten: %q %v", got, err)
+	}
+	if err := exactlyOne(ctx, s.db.NewUpdate().Model((*settingRow)(nil)).Set("value = ?", "x").Where("name = ?", "no-such-setting"), "setting"); err == nil {
+		t.Error("an update of no row passed")
+	}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if err := exactlyOne(cancelled, s.db.NewUpdate().Model((*settingRow)(nil)).Set("value = ?", "x").Where("name = ?", "a"), "setting"); err == nil {
+		t.Error("a cancelled context passed")
+	}
+}
+
+// A job history longer than one page is resealed completely.
+func TestRekeyReadsALongJobHistoryInPages(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "a.db")
+	s := openFile(t, path, WithCipher(cipherWith(t, 1)))
+	u, err := s.CreateUser(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := rekeyPage*2 + 37
+	for i := 0; i < n; i++ {
+		if _, _, err := s.EnqueueJob(ctx, models.NewJob{UserID: u.ID, Kind: "demo.import", Origin: models.JobOriginUser, DedupeKey: fmt.Sprint("k", i),
+			Payload: "secret", MaxAttempts: 3, Timeout: time.Minute}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Close()
+	s = openFile(t, path, WithCipher(cipherWith(t, 2, 1)))
+	done, err := s.Rekey(ctx, false)
+	if err != nil || done.Jobs != n {
+		t.Fatalf("rekeyed %d of %d jobs: %v", done.Jobs, n, err)
+	}
+	again, err := s.Rekey(ctx, false)
+	if err != nil || again.Jobs != 0 {
+		t.Fatalf("second run: %+v %v", again, err)
+	}
+}
+
+// On PostgreSQL the tables are locked against writers while the keys are replaced.
+func TestRekeyLocksTheTablesAgainstWritersOnPostgreSQL(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	if s.driver != DriverPostgres {
+		if err := lockForRekey(ctx, bun.Tx{}, DriverSQLite, "users"); err != nil {
+			t.Fatalf("SQLite needs no lock: %v", err)
+		}
+		t.Skip("PostgreSQL only")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err := lockForRekey(ctx, tx, s.driver, "users", "app_settings"); err != nil {
+		t.Fatal(err)
+	}
+	short, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	if err := s.PutSetting(short, "locked", "x"); err == nil {
+		t.Fatal("a write went through while the tables were locked")
+	}
+	if _, err := s.GetUser(ctx, 1); err != nil && !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("reads must go on: %v", err)
 	}
 }

@@ -42,6 +42,14 @@ func (s *Store) Rekey(ctx context.Context, dryRun bool) (RekeyStats, error) {
 	}
 	err := s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		stats = RekeyStats{}
+		// A server that still runs would write between the reads below and the updates. On PostgreSQL
+		// the tables are locked against writers (reads go on) for the whole run; on every database
+		// each update also checks that the row still holds the value that was read.
+		if !dryRun {
+			if err := lockForRekey(ctx, tx, s.driver, "users", "user_integrations", "app_settings", "auth_providers", "user_totp", "worker_jobs"); err != nil {
+				return err
+			}
+		}
 
 		// reseal returns the value sealed with the current key, or "" when it is already there.
 		reseal := func(kind, value, sealCtx string) (string, error) {
@@ -75,8 +83,8 @@ func (s *Store) Rekey(ctx context.Context, dryRun bool) (RekeyStats, error) {
 			if dryRun {
 				continue
 			}
-			if _, err := tx.NewUpdate().Model((*integrationRow)(nil)).Set("data = ?", enc).
-				Where("user_id = ?", r.UserID).Where("provider = ?", r.Provider).Exec(ctx); err != nil {
+			if err := exactlyOne(ctx, tx.NewUpdate().Model((*integrationRow)(nil)).Set("data = ?", enc).
+				Where("user_id = ?", r.UserID).Where("provider = ?", r.Provider).Where("data = ?", r.Data), "an integration"); err != nil {
 				return err
 			}
 		}
@@ -100,7 +108,7 @@ func (s *Store) Rekey(ctx context.Context, dryRun bool) (RekeyStats, error) {
 			if dryRun {
 				continue
 			}
-			if _, err := tx.NewUpdate().Model((*settingRow)(nil)).Set("value = ?", enc).Where("name = ?", r.Name).Exec(ctx); err != nil {
+			if err := exactlyOne(ctx, tx.NewUpdate().Model((*settingRow)(nil)).Set("value = ?", enc).Where("name = ?", r.Name).Where("value = ?", r.Value), "setting "+r.Name); err != nil {
 				return err
 			}
 		}
@@ -121,7 +129,7 @@ func (s *Store) Rekey(ctx context.Context, dryRun bool) (RekeyStats, error) {
 			if dryRun {
 				continue
 			}
-			if _, err := tx.NewUpdate().Model((*providerRow)(nil)).Set("client_secret = ?", enc).Where("slug = ?", r.Slug).Exec(ctx); err != nil {
+			if err := exactlyOne(ctx, tx.NewUpdate().Model((*providerRow)(nil)).Set("client_secret = ?", enc).Where("slug = ?", r.Slug).Where("client_secret = ?", r.ClientSecret), "provider "+r.Slug); err != nil {
 				return err
 			}
 		}
@@ -142,41 +150,49 @@ func (s *Store) Rekey(ctx context.Context, dryRun bool) (RekeyStats, error) {
 			if dryRun {
 				continue
 			}
-			if _, err := tx.NewUpdate().Model((*totpRow)(nil)).Set("secret = ?", enc).Where("user_id = ?", r.UserID).Exec(ctx); err != nil {
+			if err := exactlyOne(ctx, tx.NewUpdate().Model((*totpRow)(nil)).Set("secret = ?", enc).Where("user_id = ?", r.UserID).Where("secret = ?", r.Secret), "a two-step secret"); err != nil {
 				return err
 			}
 		}
 
 		// Ended jobs have no payload left and their result is only a summary, but all are resealed.
-		var jobs []jobRow
-		if err := tx.NewSelect().Model(&jobs).OrderExpr("id").Scan(ctx); err != nil {
-			return err
-		}
-		for _, r := range jobs {
-			payload, err := reseal("payload of job "+r.PublicID, r.Payload, jobPayloadContext(r.PublicID))
-			if err != nil {
+		// The history can be long: read it in pages by id rather than all at once.
+		var lastJob int64
+		for {
+			var jobs []jobRow
+			if err := tx.NewSelect().Model(&jobs).Where("id > ?", lastJob).OrderExpr("id").Limit(rekeyPage).Scan(ctx); err != nil {
 				return err
 			}
-			result, err := reseal("result of job "+r.PublicID, r.Result, jobResultContext(r.PublicID))
-			if err != nil {
-				return err
+			if len(jobs) == 0 {
+				break
 			}
-			if payload == "" && result == "" {
-				continue
-			}
-			stats.Jobs++
-			if dryRun {
-				continue
-			}
-			q := tx.NewUpdate().Model((*jobRow)(nil)).Where("id = ?", r.ID)
-			if payload != "" {
-				q = q.Set("payload = ?", payload)
-			}
-			if result != "" {
-				q = q.Set("result = ?", result)
-			}
-			if _, err := q.Exec(ctx); err != nil {
-				return err
+			lastJob = jobs[len(jobs)-1].ID
+			for _, r := range jobs {
+				payload, err := reseal("payload of job "+r.PublicID, r.Payload, jobPayloadContext(r.PublicID))
+				if err != nil {
+					return err
+				}
+				result, err := reseal("result of job "+r.PublicID, r.Result, jobResultContext(r.PublicID))
+				if err != nil {
+					return err
+				}
+				if payload == "" && result == "" {
+					continue
+				}
+				stats.Jobs++
+				if dryRun {
+					continue
+				}
+				q := tx.NewUpdate().Model((*jobRow)(nil)).Where("id = ?", r.ID).Where("payload = ?", r.Payload).Where("result = ?", r.Result)
+				if payload != "" {
+					q = q.Set("payload = ?", payload)
+				}
+				if result != "" {
+					q = q.Set("result = ?", result)
+				}
+				if err := exactlyOne(ctx, q, "job "+r.PublicID); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -208,14 +224,14 @@ func (s *Store) Rekey(ctx context.Context, dryRun bool) (RekeyStats, error) {
 			if dryRun {
 				continue
 			}
-			q := tx.NewUpdate().Model((*userRow)(nil)).Where("id = ?", r.ID)
+			q := tx.NewUpdate().Model((*userRow)(nil)).Where("id = ?", r.ID).Where("email = ?", r.Email)
 			if enc != "" {
 				q = q.Set("email = ?", enc)
 			}
 			if lookupChanged {
 				q = q.Set("email_lookup = ?", lookup)
 			}
-			if _, err := q.Exec(ctx); err != nil {
+			if err := exactlyOne(ctx, q, fmt.Sprintf("user %d", r.ID)); err != nil {
 				return err
 			}
 		}
@@ -239,4 +255,31 @@ func (s *Store) Rekey(ctx context.Context, dryRun bool) (RekeyStats, error) {
 		stats.Body, stats.Current = b.Changed, stats.Current+b.Current
 	}
 	return stats, nil
+}
+
+// rekeyPage is how many rows of a long table are read at once.
+const rekeyPage = 500
+
+// lockForRekey locks the tables against writers until the transaction ends (PostgreSQL only: SQLite
+// takes the one write lock with its first update, and the checks in exactlyOne cover the rest).
+func lockForRekey(ctx context.Context, tx bun.Tx, driver string, tables ...string) error {
+	if driver != DriverPostgres {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, "LOCK TABLE "+strings.Join(tables, ", ")+" IN SHARE ROW EXCLUSIVE MODE")
+	return err
+}
+
+// exactlyOne runs an update that is keyed on the value that was read and fails when it changed no
+// row: somebody wrote the row after it was read, and putting the old data back would undo that
+// (for a refresh token that works once, it would lose it). The message says what to do.
+func exactlyOne(ctx context.Context, q *bun.UpdateQuery, what string) error {
+	res, err := q.Exec(ctx)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n != 1 {
+		return fmt.Errorf("%s changed while the keys were being replaced: stop every process that uses this database and run it again", what)
+	}
+	return nil
 }

@@ -94,8 +94,12 @@ The server also starts between steps 3 and 5. It reads old values with the
 previous key, writes new ones with the current key, and logs a warning until
 `db rekey` has run. Run `db rekey` while the server is stopped: a running server
 keeps its keys in memory. The cookie key itself does not change, so sessions
-stay valid. `db rekey` was tested on SQLite; on Postgres it is the same code in
-one transaction.
+stay valid. On PostgreSQL `db rekey` locks the tables against writers while it
+runs (reads go on), and on both databases each update checks that the row still
+holds the value it read: if a running server wrote a row meanwhile, `db rekey`
+stops with an error and changes nothing, and you run it again with the servers
+stopped. It is the same code in one transaction on SQLite and PostgreSQL, and is
+tested on both.
 
 Rotation is manual on purpose: the key belongs to the operator, `db rekey` is
 offline and the AES-GCM usage limits are far out of reach (see

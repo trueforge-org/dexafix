@@ -239,7 +239,7 @@ func (b *BodyStore) encryptExisting(ctx context.Context) error {
 				continue
 			}
 			enc := b.cipher.seal(r.Data, scaleContext(r.UserID, r.RowUID))
-			if _, err := tx.NewUpdate().Model((*scaleRow)(nil)).Set("data = ?", enc).Where("id = ?", r.ID).Exec(ctx); err != nil {
+			if err := exactlyOne(ctx, tx.NewUpdate().Model((*scaleRow)(nil)).Set("data = ?", enc).Where("id = ?", r.ID).Where("data = ?", r.Data), fmt.Sprintf("scale reading %d", r.ID)); err != nil {
 				return err
 			}
 		}
@@ -252,7 +252,7 @@ func (b *BodyStore) encryptExisting(ctx context.Context) error {
 				continue
 			}
 			enc := b.cipher.seal(r.Data, dexaContext(r.UserID, r.RowUID))
-			if _, err := tx.NewUpdate().Model((*dexaRow)(nil)).Set("data = ?", enc).Where("id = ?", r.ID).Exec(ctx); err != nil {
+			if err := exactlyOne(ctx, tx.NewUpdate().Model((*dexaRow)(nil)).Set("data = ?", enc).Where("id = ?", r.ID).Where("data = ?", r.Data), fmt.Sprintf("dexa scan %d", r.ID)); err != nil {
 				return err
 			}
 		}
@@ -276,6 +276,11 @@ func (b *BodyStore) Rekey(ctx context.Context, dryRun bool) (BodyRekeyStats, err
 	}
 	err := b.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		stats = BodyRekeyStats{}
+		if !dryRun { // writers wait on PostgreSQL; every update below also checks what it read
+			if err := lockForRekey(ctx, tx, b.driver, "scale_readings", "dexa_scans"); err != nil {
+				return err
+			}
+		}
 		// The context (user and row_uid) stays the same, so only the data column changes.
 		reseal := func(kind, value, sealCtx string) (string, error) {
 			if !strings.HasPrefix(value, encPrefix) {
