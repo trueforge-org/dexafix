@@ -17,6 +17,7 @@ import (
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
 	"github.com/trueforge-org/dexafix/pkg/shared/edge"
+	"github.com/trueforge-org/dexafix/pkg/shared/mtls"
 	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
 	"github.com/trueforge-org/dexafix/pkg/store"
 )
@@ -139,7 +140,7 @@ func matchWorkerSecret(accepted []workerSecret, presented string) (map[string]bo
 func (s *Backend) workerAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		providers, ok := matchWorkerSecret(s.workerSecrets, r.Header.Get(workerapi.HeaderWorker))
-		if !ok {
+		if !ok || mtls.ClientRole(r) == mtls.RoleWeb { // the web process's certificate does not open the workers' door
 			internalFail(w, http.StatusUnauthorized, apiclient.CodeUnauthorized, "worker authentication required")
 			return
 		}

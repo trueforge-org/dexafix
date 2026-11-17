@@ -399,7 +399,7 @@ func (o initOptions) makeAll() error {
 	}
 
 	// ---- made again every time: the certificates of the two internal links ----
-	web, err := mtls.GenerateValid(o.apiNames, "DexaFix api", "DexaFix web", o.validity)
+	web, err := mtls.GenerateRoles(o.apiNames, "DexaFix api", o.validity)
 	if err != nil {
 		return err
 	}
@@ -407,12 +407,17 @@ func (o initOptions) makeAll() error {
 	files := []pemFile{
 		{o.apiDir, fileMTLSCA, web.CA}, {o.apiDir, fileMTLSCert, web.ServerCert}, {o.apiDir, fileMTLSKey, web.ServerKey},
 	}
-	// The web process and the workers share one client certificate: it proves the link, and the
-	// service or worker secret proves the role.
-	for _, d := range append([]string{o.webDir}, o.workerDirList()...) {
-		if d != "" {
-			files = append(files, pemFile{d, fileMTLSCA, web.CA}, pemFile{d, fileMTLSCert, web.ClientCert}, pemFile{d, fileMTLSKey, web.ClientKey})
+	// The web process and the workers each get a client certificate of their own, from the same CA:
+	// the role is in the certificate, so the api process does not open the web process's door to a
+	// worker's certificate or the workers' door to the web process's, whatever secrets they hold.
+	clientFiles := func(dir string, p mtls.ClientPair) {
+		if dir != "" {
+			files = append(files, pemFile{dir, fileMTLSCA, web.CA}, pemFile{dir, fileMTLSCert, p.Cert}, pemFile{dir, fileMTLSKey, p.Key})
 		}
+	}
+	clientFiles(o.webDir, web.Roles[mtls.RoleWeb])
+	for _, d := range o.workerDirList() {
+		clientFiles(d, web.Roles[mtls.RoleWorker])
 	}
 	if o.bodyDir != "" {
 		// The link to the body service has a CA of its own: a certificate of one link opens nothing

@@ -187,8 +187,13 @@ func TestSecretsInitCreatesEverything(t *testing.T) {
 	if readFile(t, d["api"], fileMTLSKey) == readFile(t, d["web"], fileMTLSKey) {
 		t.Error("the web process must not get the api's private key")
 	}
-	if readFile(t, d["web"], fileMTLSKey) != readFile(t, d["worker"], fileMTLSKey) {
-		t.Error("web and workers share one client certificate")
+	// The web process and the workers have a client certificate each (the same CA signs both), and
+	// every provider's workers hold the worker one.
+	if readFile(t, d["web"], fileMTLSKey) == readFile(t, d["worker"], fileMTLSKey) || readFile(t, d["web"], fileMTLSCert) == readFile(t, d["worker"], fileMTLSCert) {
+		t.Error("web and workers share one client certificate: a worker's must not open the web process's door")
+	}
+	if readFile(t, d["worker"], fileMTLSCert) != readFile(t, d["workersl"], fileMTLSCert) || readFile(t, d["web"], fileMTLSCA) != readFile(t, d["worker"], fileMTLSCA) {
+		t.Error("the workers' directories differ in certificate or CA")
 	}
 	// Each link has a CA of its own.
 	if readFile(t, d["api"], fileMTLSCA) == readFile(t, d["body"], fileMTLSCA) {

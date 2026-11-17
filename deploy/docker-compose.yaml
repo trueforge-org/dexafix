@@ -376,11 +376,14 @@ services:
       <<: *after-init
       api:
         condition: service_healthy
+    # Published on this machine only (DEXAFIX_BIND=127.0.0.1): a reverse proxy on the same host, or
+    # http://localhost:8080 to try it out. To serve visitors directly, or to reach it from another
+    # machine, set DEXAFIX_BIND=0.0.0.0 (or the address of one network card) in a .env file.
     ports:
-      - "8080:8080" # plain HTTP, for your reverse proxy or for trying it out
+      - "${DEXAFIX_BIND:-127.0.0.1}:8080:8080" # plain HTTP, for your reverse proxy or for trying it out
       # HTTPS and HTTP/3 are set up on the Admin page and served by this container, 8443 by default:
-      - "8443:8443"
-      - "8443:8443/udp"
+      - "${DEXAFIX_BIND:-127.0.0.1}:8443:8443"
+      - "${DEXAFIX_BIND:-127.0.0.1}:8443:8443/udp"
     networks: [link, public]
 
   # One worker container per provider, so one that hangs or is blocked cannot hold up the other.
@@ -388,8 +391,8 @@ services:
   # container hands every job to exactly one. A worker has no database and no encryption key; it
   # gets a user's credentials only inside the job it works on. Which providers a worker runs is
   # chosen here (--providers); everything else (time limits, retries, pauses, priorities) is on the
-  # Admin page, under Workers. The workers use the web container's client certificate: it proves the
-  # link, and the worker secret proves the role. Each provider has a secret and a secrets volume of
+  # Admin page, under Workers. The workers have a client certificate of their own (the same CA signs
+  # it): it proves the link and names the role, and the worker secret proves it as well. Each provider has a secret and a secrets volume of
   # its own: a compromised worker holds only its provider's secret, so it cannot lease another's jobs.
   worker-withings:
     <<: [*hardened, *limits-worker, *logging]

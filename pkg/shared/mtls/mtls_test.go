@@ -180,3 +180,43 @@ func TestGenerateValidSetsTheLeafLifetime(t *testing.T) {
 		t.Error("a zero validity must be refused")
 	}
 }
+
+func TestClientCertificatesNameTheirRole(t *testing.T) {
+	b, err := GenerateRoles([]string{"api"}, "DexaFix api", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(b.Roles) != 2 || b.Roles[RoleWeb].Cert == "" || b.Roles[RoleWorker].Cert == "" || b.Roles[RoleWeb].Cert == b.Roles[RoleWorker].Cert || b.Roles[RoleWeb].Key == b.Roles[RoleWorker].Key {
+		t.Fatalf("roles %+v", b.Roles)
+	}
+	if b.ClientCert != b.Roles[RoleWeb].Cert {
+		t.Error("ClientCert is not the web one")
+	}
+	for role, pair := range b.Roles {
+		block, _ := pem.Decode([]byte(pair.Cert))
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := &http.Request{TLS: &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}}
+		if got := ClientRole(req); got != role {
+			t.Errorf("the %s certificate names role %q", role, got)
+		}
+	}
+	// A certificate made without roles, a connection without a certificate and one that is not TLS name none.
+	plain, _ := Generate([]string{"api"})
+	block, _ := pem.Decode([]byte(plain.ClientCert))
+	cert, _ := x509.ParseCertificate(block.Bytes)
+	for name, req := range map[string]*http.Request{
+		"no role":        {TLS: &tls.ConnectionState{PeerCertificates: []*x509.Certificate{cert}}},
+		"no certificate": {TLS: &tls.ConnectionState{}},
+		"no TLS":         {},
+	} {
+		if got := ClientRole(req); got != "" {
+			t.Errorf("%s: role %q", name, got)
+		}
+	}
+	if _, err := GenerateRoles(nil, "x", 0); err == nil {
+		t.Error("a validity of zero was accepted")
+	}
+}

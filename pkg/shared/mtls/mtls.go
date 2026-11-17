@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"slices"
 	"sync"
@@ -35,6 +36,33 @@ type Bundle struct {
 	ServerKey  string
 	ClientCert string
 	ClientKey  string
+	// Roles holds a client certificate per role, from GenerateRoles; a certificate carries its role
+	// in its organizational unit (see ClientRole).
+	Roles map[string]ClientPair
+}
+
+// ClientPair is a client certificate and its key.
+type ClientPair struct{ Cert, Key string }
+
+// Role names of the clients of the api process.
+const (
+	RoleWeb    = "web"
+	RoleWorker = "worker"
+)
+
+// ClientRole is the role the client certificate of a TLS request names, or "" when it names none (a
+// certificate made without roles, or a connection that is not TLS). A role in a certificate lets the
+// api process keep the doors apart even though both clients hold a certificate of the same CA: the
+// web process's certificate does not open the worker endpoints, and a worker's does not open the
+// web process's.
+func ClientRole(r *http.Request) string {
+	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+		return ""
+	}
+	if ou := r.TLS.PeerCertificates[0].Subject.OrganizationalUnit; len(ou) > 0 {
+		return ou[0]
+	}
+	return ""
 }
 
 const (
@@ -59,6 +87,19 @@ func GenerateFor(serverNames []string, serverCN, clientCN string) (Bundle, error
 // years: its key is thrown away, so it cannot issue anything else). A deployment that makes a new
 // set at every start can use a short one.
 func GenerateValid(serverNames []string, serverCN, clientCN string, validity time.Duration) (Bundle, error) {
+	return generate(serverNames, serverCN, []clientSpec{{cn: clientCN}}, validity)
+}
+
+// GenerateRoles is GenerateValid with a client certificate for each of the roles (RoleWeb and
+// RoleWorker): same CA, one certificate and key each, the role in the certificate. ClientCert is the
+// web one.
+func GenerateRoles(serverNames []string, serverCN string, validity time.Duration) (Bundle, error) {
+	return generate(serverNames, serverCN, []clientSpec{{cn: "DexaFix web", role: RoleWeb}, {cn: "DexaFix worker", role: RoleWorker}}, validity)
+}
+
+type clientSpec struct{ cn, role string }
+
+func generate(serverNames []string, serverCN string, clients []clientSpec, validity time.Duration) (Bundle, error) {
 	if validity <= 0 {
 		return Bundle{}, errors.New("the certificate validity must be positive")
 	}
@@ -103,15 +144,30 @@ func GenerateValid(serverNames []string, serverCN, clientCN string, validity tim
 	srvTmpl.IPAddresses = append(srvTmpl.IPAddresses, net.IPv4(127, 0, 0, 1), net.IPv6loopback)
 	b.ServerCert, b.ServerKey = issue(srvTmpl, ca, caKey)
 
-	cliTmpl := &x509.Certificate{
-		SerialNumber: serial(),
-		Subject:      pkix.Name{CommonName: clientCN},
-		NotBefore:    now,
-		NotAfter:     now.Add(validity),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	for i, c := range clients {
+		subject := pkix.Name{CommonName: c.cn}
+		if c.role != "" {
+			subject.OrganizationalUnit = []string{c.role}
+		}
+		cliTmpl := &x509.Certificate{
+			SerialNumber: serial(),
+			Subject:      subject,
+			NotBefore:    now,
+			NotAfter:     now.Add(validity),
+			KeyUsage:     x509.KeyUsageDigitalSignature,
+			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		}
+		cert, key := issue(cliTmpl, ca, caKey)
+		if i == 0 {
+			b.ClientCert, b.ClientKey = cert, key
+		}
+		if c.role != "" {
+			if b.Roles == nil {
+				b.Roles = map[string]ClientPair{}
+			}
+			b.Roles[c.role] = ClientPair{Cert: cert, Key: key}
+		}
 	}
-	b.ClientCert, b.ClientKey = issue(cliTmpl, ca, caKey)
 	return b, nil
 }
 

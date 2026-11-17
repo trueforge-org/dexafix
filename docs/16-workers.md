@@ -74,8 +74,10 @@ private, the worker logs a warning, because the link carries credentials of
 users' accounts at the providers.
 
 The Compose deployment in `deploy/` turns mutual TLS on for the workers: its
-`init` container makes the client certificate (the one web uses) and the worker
-secret, and gives them to the worker containers only. See
+`init` container makes a client certificate for the workers (the web process has
+its own, from the same CA) and the worker secrets, and gives them to the worker
+containers only. The certificate names its role, and the api process opens the
+workers' door only to a certificate that is not the web process's. See
 [The recommended deployment](15-split-deployment.md#the-recommended-deployment-deploy).
 
 | Flag                   | Environment variable          | Default | Description                                                              |

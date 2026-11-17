@@ -16,6 +16,7 @@ import (
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
 	"github.com/trueforge-org/dexafix/pkg/shared/bodyapi"
 	"github.com/trueforge-org/dexafix/pkg/shared/edge"
+	"github.com/trueforge-org/dexafix/pkg/shared/mtls"
 	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
 	"github.com/trueforge-org/dexafix/pkg/store"
 )
@@ -75,7 +76,8 @@ func (s *Backend) InternalHandler() http.Handler {
 // serviceAuth lets in only callers that present a service secret.
 func (s *Backend) serviceAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.validServiceSecret(r.Header.Get(apiclient.HeaderService)) {
+		// A certificate made for a worker does not open the web process's door.
+		if !s.validServiceSecret(r.Header.Get(apiclient.HeaderService)) || mtls.ClientRole(r) == mtls.RoleWorker {
 			internalFail(w, http.StatusUnauthorized, apiclient.CodeUnauthorized, "service authentication required")
 			return
 		}

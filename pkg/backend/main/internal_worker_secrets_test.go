@@ -2,12 +2,18 @@ package mainbackend
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/trueforge-org/dexafix/pkg/models"
+	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
+	"github.com/trueforge-org/dexafix/pkg/shared/mtls"
 	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
 	"github.com/trueforge-org/dexafix/pkg/store"
 )
@@ -128,6 +134,61 @@ func TestWorkerSecretsAreRefusedWhenTheyWouldOpenTooMuch(t *testing.T) {
 	} {
 		if err := f.b.SetWorkerSecrets(groups...); err == nil {
 			t.Errorf("%s was accepted", name)
+		}
+	}
+}
+
+// A client certificate names its role. With both secrets in hand, a certificate made for the workers
+// does not open the web process's door and the web process's does not open the workers'; one without
+// a role (an older set, or no TLS at all) opens either, as before.
+func TestAClientCertificateOpensOnlyTheDoorOfItsRole(t *testing.T) {
+	f := scopedFixture(t)
+	f.b.SetServiceSecrets("service-secret-0123456789abcdef")
+	b, err := mtls.GenerateRoles([]string{"api"}, "DexaFix api", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certOf := func(pemText string) *x509.Certificate {
+		block, _ := pem.Decode([]byte(pemText))
+		c, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	plain, _ := mtls.Generate([]string{"api"})
+	withCert := func(c *x509.Certificate) *tls.ConnectionState {
+		if c == nil {
+			return nil
+		}
+		return &tls.ConnectionState{PeerCertificates: []*x509.Certificate{c}}
+	}
+	web, worker, none := certOf(b.Roles[mtls.RoleWeb].Cert), certOf(b.Roles[mtls.RoleWorker].Cert), certOf(plain.ClientCert)
+
+	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	status := func(h http.Handler, header, secret string, state *tls.ConnectionState) int {
+		req := httptest.NewRequest("GET", "/", nil)
+		req.Header.Set(header, secret)
+		req.TLS = state
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	serviceDoor, workerDoor := f.b.serviceAuth(ok), f.b.workerAuth(ok)
+	for name, tc := range map[string]struct {
+		state                *tls.ConnectionState
+		serviceOK, workersOK bool
+	}{
+		"the web certificate":          {withCert(web), true, false},
+		"the worker certificate":       {withCert(worker), false, true},
+		"a certificate without a role": {withCert(none), true, true},
+		"no TLS":                       {nil, true, true},
+	} {
+		if got := status(serviceDoor, apiclient.HeaderService, "service-secret-0123456789abcdef", tc.state) == http.StatusNoContent; got != tc.serviceOK {
+			t.Errorf("%s at the web process's door: opened %v, want %v", name, got, tc.serviceOK)
+		}
+		if got := status(workerDoor, workerapi.HeaderWorker, demoWorkerSecret, tc.state) == http.StatusNoContent; got != tc.workersOK {
+			t.Errorf("%s at the workers' door: opened %v, want %v", name, got, tc.workersOK)
 		}
 	}
 }

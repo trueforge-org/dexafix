@@ -163,6 +163,13 @@ administrator. No file has to exist before `up` except that folder, because the
 containers read their secrets from volumes that `init` fills. `init` and
 `db-setup` run again at every `docker compose up -d`.
 
+The web container's ports (8080, and 8443 for HTTPS and HTTP/3) are published on
+this machine only (`127.0.0.1`), so a reverse proxy on the same host or
+<http://localhost:8080> works and nothing is open to the network by accident. To
+serve visitors directly, or to reach it from another machine, put
+`DEXAFIX_BIND=0.0.0.0` (or the address of one network card) in a `.env` file next
+to the Compose file.
+
 ### Who `init` runs as
 
 `init` runs as the unprivileged user `568:568`, the user of all the other
@@ -223,8 +230,11 @@ as soon as the certificates are made. The containers read changed certificate
 files again within 30 seconds and need no restart. While they do, a process may
 be briefly ahead of the others: expect one `bad certificate` line in the api's
 log and a `could not refresh the settings` warning in web's, which heal by
-themselves. The web process and the workers share one client certificate: it
-proves the link, and the service or worker secret proves the role. The link to
+themselves. The web process and the workers each have a client certificate of
+the same CA (`init` makes both): it proves the link and names the role, so the web
+process's certificate does not open the workers' door and a worker's does not open
+the web process's, and the service or worker secret proves the role as well.
+Certificates made without a role (`secrets mtls`, or an older set) open either door. The link to
 the body service has a CA of its own, so a certificate of one link opens nothing
 of the other.
 
