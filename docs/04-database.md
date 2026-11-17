@@ -38,7 +38,15 @@ go run . serve --db-driver postgres
 The target is migrated to the latest schema and must be empty. Ids are kept,
 and the Postgres sequences are reset so new rows do not collide. The copy is a
 single transaction, so a failure leaves the target untouched. The source is not
-changed, but it must already be fully migrated (`db migrate up`).
+changed, but it must already be fully migrated (`db migrate up`). It is read in
+one transaction (a snapshot on PostgreSQL); still copy a source that is stopped,
+because what is written after the snapshot is not in the copy.
+
+Sessions, password reset links, failed-attempt counters, worker jobs and worker
+instances are not copied: people sign in again and the schedules queue new jobs.
+Job schedules (paused ones stay paused) and the single-use values that have not
+expired yet are copied, so a second-step cookie that was used on the source cannot
+be used again on the target.
 
 `db copy` copies encrypted values unchanged, so the target database needs the
 same encryption key as the source (or run `db rekey` on the target afterwards,

@@ -171,3 +171,51 @@ func TestLastAdminGuards(t *testing.T) {
 		t.Fatalf("delete with another admin: %v", err)
 	}
 }
+
+// Spent single-use values and paused schedules go along: losing the first lets a second-step cookie
+// that was used on the source be replayed on the target until it expires, losing the second restarts
+// schedules that were paused for repeated failures.
+func TestCopyCarriesSpentNoncesAndSchedules(t *testing.T) {
+	ctx := context.Background()
+	src, err := Open(ctx, DriverSQLite, "file:"+filepath.Join(t.TempDir(), "src.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	dst := newStore(t)
+	u, err := src.CreateUser(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := src.PutJobSchedule(ctx, models.JobSchedule{UserID: u.ID, Kind: "withings.import", ConsecutiveFailures: 3, PausedReason: "too many failures"}); err != nil {
+		t.Fatal(err)
+	}
+	live, gone := "still-valid", "long-expired"
+	if first, err := src.UseNonce(ctx, live, time.Now().Add(time.Hour)); err != nil || !first {
+		t.Fatal(first, err)
+	}
+	if _, err := src.db.ExecContext(ctx, `INSERT INTO used_nonces (nonce, expires_at) VALUES (?, ?)`, gone, time.Now().UTC().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	// The target already holds one of the values (it was used briefly): that is not a conflict.
+	if _, err := dst.UseNonce(ctx, live, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := Copy(ctx, src, dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Schedules != 1 || stats.Nonces != 1 {
+		t.Fatalf("stats %+v", stats)
+	}
+	sc, err := dst.GetJobSchedule(ctx, u.ID, "withings.import")
+	if err != nil || sc.PausedReason != "too many failures" || sc.ConsecutiveFailures != 3 {
+		t.Fatalf("schedule %+v %v", sc, err)
+	}
+	if seen, err := dst.NonceSeen(ctx, live); err != nil || !seen {
+		t.Errorf("a spent value can be used again on the target: %v %v", seen, err)
+	}
+	if seen, _ := dst.NonceSeen(ctx, gone); seen {
+		t.Error("an expired value was copied")
+	}
+}

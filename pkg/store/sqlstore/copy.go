@@ -2,8 +2,10 @@ package sqlstore
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/uptrace/bun"
 )
@@ -22,11 +24,28 @@ type CopyStats struct {
 	Settings     int
 	Providers    int
 	AuditEvents  int
+	Schedules    int // job schedules (paused ones stay paused)
+	Nonces       int // single-use values that have not expired yet
+}
+
+// nonceRow is a spent single-use value; the target must refuse it too, or a second-step cookie or
+// state that was used on the source could be replayed there until it expires.
+type nonceRow struct {
+	bun.BaseModel `bun:"table:used_nonces"`
+
+	Nonce     string    `bun:"nonce,pk"`
+	ExpiresAt time.Time `bun:"expires_at"`
 }
 
 // Copy transfers every row from src to dst, preserving ids. It works between any pair of backends.
 // Both databases must be at the same schema version and dst must be empty. The copy is a single
-// transaction on dst, so a failure leaves it untouched.
+// transaction on dst, so a failure leaves it untouched, and the source is read in one transaction
+// too (a snapshot on PostgreSQL), so rows written meanwhile cannot make it skip or repeat rows. Use a
+// stopped source anyway: what is written after the snapshot is not in the copy.
+//
+// Not copied, because they mean nothing on another database or are rebuilt: sessions (people sign in
+// again), password reset links, failed-attempt counters, worker jobs (queued ones are made again by
+// the schedules) and worker instances.
 func Copy(ctx context.Context, src, dst *Store) (CopyStats, error) {
 	var stats CopyStats
 
@@ -43,7 +62,7 @@ func Copy(ctx context.Context, src, dst *Store) (CopyStats, error) {
 	}
 	// The body domain goes along when both stores have it; a store opened WithoutBody has none.
 	withBody := src.BodyStore != nil && dst.BodyStore != nil
-	tables := []any{(*userRow)(nil), (*integrationRow)(nil), (*identityRow)(nil), (*totpRow)(nil), (*recoveryRow)(nil), (*passkeyRow)(nil), (*tokenRow)(nil), (*settingRow)(nil), (*providerRow)(nil), (*auditRow)(nil)}
+	tables := []any{(*scheduleRow)(nil), (*userRow)(nil), (*integrationRow)(nil), (*identityRow)(nil), (*totpRow)(nil), (*recoveryRow)(nil), (*passkeyRow)(nil), (*tokenRow)(nil), (*settingRow)(nil), (*providerRow)(nil), (*auditRow)(nil)}
 	if withBody {
 		tables = append(tables, (*dexaRow)(nil), (*scaleRow)(nil), (*bodyStateRow)(nil))
 	}
@@ -61,59 +80,76 @@ func Copy(ctx context.Context, src, dst *Store) (CopyStats, error) {
 		}
 	}
 
+	var readOpts *sql.TxOptions // SQLite: one read transaction already is a snapshot
+	if src.driver == DriverPostgres {
+		readOpts = &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
+	}
+	srcTx, err := src.db.BeginTx(ctx, readOpts)
+	if err != nil {
+		return stats, fmt.Errorf("source: %w", err)
+	}
+	defer srcTx.Rollback() // only reads
 	err = dst.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		var err error
-		if stats.Users, err = copyTable[userRow](ctx, src, tx, "id"); err != nil {
+		if stats.Users, err = copyTable[userRow](ctx, srcTx, tx, "id", nil, false); err != nil {
 			return fmt.Errorf("users: %w", err)
+		}
+		if stats.Schedules, err = copyTable[scheduleRow](ctx, srcTx, tx, "user_id, kind", nil, false); err != nil {
+			return fmt.Errorf("worker_schedules: %w", err)
+		}
+		// Only the values that still matter; a value the target already holds stays.
+		now := time.Now().UTC()
+		if stats.Nonces, err = copyTable[nonceRow](ctx, srcTx, tx, "nonce", func(q *bun.SelectQuery) *bun.SelectQuery { return q.Where("expires_at >= ?", now) }, true); err != nil {
+			return fmt.Errorf("used_nonces: %w", err)
 		}
 		if withBody {
 			// Like the main key check: the source's check goes with its ciphertext.
 			if _, err := tx.NewDelete().Model((*bodyMetaRow)(nil)).Where("name = ?", checkBody).Exec(ctx); err != nil {
 				return fmt.Errorf("body_meta: %w", err)
 			}
-			if stats.DexaScans, err = copyTable[dexaRow](ctx, src, tx, "id"); err != nil {
+			if stats.DexaScans, err = copyTable[dexaRow](ctx, srcTx, tx, "id", nil, false); err != nil {
 				return fmt.Errorf("dexa_scans: %w", err)
 			}
-			if stats.ScaleReads, err = copyTable[scaleRow](ctx, src, tx, "id"); err != nil {
+			if stats.ScaleReads, err = copyTable[scaleRow](ctx, srcTx, tx, "id", nil, false); err != nil {
 				return fmt.Errorf("scale_readings: %w", err)
 			}
-			if _, err = copyTable[bodyStateRow](ctx, src, tx, "user_id"); err != nil {
+			if _, err = copyTable[bodyStateRow](ctx, srcTx, tx, "user_id", nil, false); err != nil {
 				return fmt.Errorf("body_user_state: %w", err)
 			}
-			if _, err = copyTable[bodyMetaRow](ctx, src, tx, "name"); err != nil {
+			if _, err = copyTable[bodyMetaRow](ctx, srcTx, tx, "name", nil, false); err != nil {
 				return fmt.Errorf("body_meta: %w", err)
 			}
 		}
-		if stats.Integrations, err = copyTable[integrationRow](ctx, src, tx, "user_id, provider"); err != nil {
+		if stats.Integrations, err = copyTable[integrationRow](ctx, srcTx, tx, "user_id, provider", nil, false); err != nil {
 			return fmt.Errorf("user_integrations: %w", err)
 		}
 		// Sessions are not copied: they are short-lived, and users simply sign in again.
-		if stats.Identities, err = copyTable[identityRow](ctx, src, tx, "provider, subject"); err != nil {
+		if stats.Identities, err = copyTable[identityRow](ctx, srcTx, tx, "provider, subject", nil, false); err != nil {
 			return fmt.Errorf("user_identities: %w", err)
 		}
-		if _, err = copyTable[passkeyRow](ctx, src, tx, "credential_id"); err != nil {
+		if _, err = copyTable[passkeyRow](ctx, srcTx, tx, "credential_id", nil, false); err != nil {
 			return fmt.Errorf("passkeys: %w", err)
 		}
-		if _, err = copyTable[totpRow](ctx, src, tx, "user_id"); err != nil {
+		if _, err = copyTable[totpRow](ctx, srcTx, tx, "user_id", nil, false); err != nil {
 			return fmt.Errorf("user_totp: %w", err)
 		}
-		if _, err = copyTable[recoveryRow](ctx, src, tx, "user_id, code_hash"); err != nil {
+		if _, err = copyTable[recoveryRow](ctx, srcTx, tx, "user_id, code_hash", nil, false); err != nil {
 			return fmt.Errorf("user_recovery_codes: %w", err)
 		}
-		if stats.AccessTokens, err = copyTable[tokenRow](ctx, src, tx, "id"); err != nil {
+		if stats.AccessTokens, err = copyTable[tokenRow](ctx, srcTx, tx, "id", nil, false); err != nil {
 			return fmt.Errorf("access_tokens: %w", err)
 		}
 		// The source's key check goes with its ciphertext, so the target's own is replaced.
 		if _, err := tx.NewDelete().Model((*settingRow)(nil)).Where("name = ?", checkSetting).Exec(ctx); err != nil {
 			return fmt.Errorf("app_settings: %w", err)
 		}
-		if stats.Settings, err = copyTable[settingRow](ctx, src, tx, "name"); err != nil {
+		if stats.Settings, err = copyTable[settingRow](ctx, srcTx, tx, "name", nil, false); err != nil {
 			return fmt.Errorf("app_settings: %w", err)
 		}
-		if stats.Providers, err = copyTable[providerRow](ctx, src, tx, "slug"); err != nil {
+		if stats.Providers, err = copyTable[providerRow](ctx, srcTx, tx, "slug", nil, false); err != nil {
 			return fmt.Errorf("auth_providers: %w", err)
 		}
-		if stats.AuditEvents, err = copyTable[auditRow](ctx, src, tx, "id"); err != nil {
+		if stats.AuditEvents, err = copyTable[auditRow](ctx, srcTx, tx, "id", nil, false); err != nil {
 			return fmt.Errorf("audit_log: %w", err)
 		}
 		if dst.driver == DriverPostgres {
@@ -137,18 +173,27 @@ func Copy(ctx context.Context, src, dst *Store) (CopyStats, error) {
 	return stats, nil
 }
 
-// copyTable pages through one table of src ordered by orderBy and inserts the rows into tx.
-func copyTable[T any](ctx context.Context, src *Store, tx bun.Tx, orderBy string) (int, error) {
+// copyTable pages through one table of src ordered by orderBy, optionally filtered, and inserts the
+// rows into tx. With ignoreConflicts a row the target already has is left alone.
+func copyTable[T any](ctx context.Context, src bun.IDB, tx bun.Tx, orderBy string, filter func(*bun.SelectQuery) *bun.SelectQuery, ignoreConflicts bool) (int, error) {
 	total := 0
 	for offset := int64(0); ; offset += copyBatch {
 		var rows []T
-		if err := src.db.NewSelect().Model(&rows).OrderExpr(orderBy).Limit(copyBatch).Offset(offset).Scan(ctx); err != nil {
+		q := src.NewSelect().Model(&rows)
+		if filter != nil {
+			q = filter(q)
+		}
+		if err := q.OrderExpr(orderBy).Limit(copyBatch).Offset(offset).Scan(ctx); err != nil {
 			return total, err
 		}
 		if len(rows) == 0 {
 			return total, nil
 		}
-		if _, err := tx.NewInsert().Model(&rows).Returning("NULL").Exec(ctx); err != nil {
+		ins := tx.NewInsert().Model(&rows).Returning("NULL")
+		if ignoreConflicts {
+			ins = ins.On("CONFLICT DO NOTHING")
+		}
+		if _, err := ins.Exec(ctx); err != nil {
 			return total, err
 		}
 		total += len(rows)
