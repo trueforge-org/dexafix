@@ -24,7 +24,7 @@ env:
   # an old release panics on newer Go code ("unexpected expr: *ast.KeyValueExpr", exit status 2) in
   # some runs and not in others, so the job failed at random on the same commit. v1.1.4 did that on
   # Go 1.27; v1.9.0 did not fail in 8 runs of 8 where v1.1.4 failed in 4.
-  GOVULNCHECK_VERSION: v1.9.0
+  GOVULNCHECK_VERSION: v1.10.0
 
 jobs:
   lint:
