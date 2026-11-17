@@ -2,9 +2,7 @@
 version: 2
 project_name: dexafix
 
-before:
-  hooks:
-    - go mod tidy
+# No `go mod tidy` hook: CI fails on an untidy go.mod, so what is released is what was reviewed.
 
 builds:
   - id: dexafix

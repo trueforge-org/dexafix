@@ -205,3 +205,15 @@ func mustAddr(t *testing.T, s string) netip.Addr {
 	}
 	return a
 }
+
+// The guard checks the address that is dialled, which behind a proxy is the proxy's: so the provider
+// client takes no proxy from the environment.
+func TestTheProviderClientTakesNoProxyFromTheEnvironment(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://proxy.internal:3128")
+	t.Setenv("HTTP_PROXY", "http://proxy.internal:3128")
+	g := newRig(t)
+	tr, ok := g.b.newProviderClient().Transport.(*http.Transport)
+	if !ok || tr.Proxy != nil {
+		t.Fatalf("transport %T, proxy set: %v", tr, tr != nil && tr.Proxy != nil)
+	}
+}

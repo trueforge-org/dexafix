@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"testing"
 	"time"
@@ -84,5 +86,61 @@ func TestADialerWithTheGuardRefusesBeforeConnecting(t *testing.T) {
 	}
 	if time.Since(start) > 2*time.Second {
 		t.Errorf("the refusals took %v: the dialer waited on the network", time.Since(start))
+	}
+}
+
+func TestAnOutsideClientRefusesPrivateAddressesAndLongRedirectChains(t *testing.T) {
+	for _, v := range proxyVariables {
+		t.Setenv(v, "")
+	}
+	c := OutsideClient(5 * time.Second)
+	// A name or redirect that points inside the network gets nowhere: the dialer refuses it.
+	for _, u := range []string{"http://10.1.2.3/", "http://192.168.0.9/", "http://169.254.169.254/latest/meta-data/", "http://[fd00:ec2::254]/"} {
+		resp, err := c.Get(u)
+		if err == nil {
+			resp.Body.Close()
+			t.Errorf("%s was reached", u)
+		} else if !errors.Is(err, ErrBlocked) {
+			t.Errorf("%s: %v", u, err)
+		}
+	}
+	// Loopback is let through, as in Check (tests and development servers).
+	hops := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hops++
+		http.Redirect(w, r, "/again", http.StatusFound)
+	}))
+	defer srv.Close()
+	if _, err := c.Get(srv.URL); err == nil || hops != maxRedirects {
+		t.Errorf("a redirect loop: %v after %d requests, want an error after %d", err, hops, maxRedirects)
+	}
+}
+
+func TestAnOutsideClientBehindAProxyMayDialThePrivateProxy(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://10.0.0.1:3128")
+	c := OutsideClient(time.Second)
+	dial := c.Transport.(*http.Transport).DialContext
+	// The proxy's own private address is let through, the metadata service still is not.
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond) // a private address nobody answers at
+	defer cancel()
+	if _, err := dial(ctx, "tcp", "169.254.169.254:80"); !errors.Is(err, ErrBlocked) {
+		t.Errorf("the metadata service behind a proxy: %v", err)
+	}
+	if _, err := dial(ctx, "tcp", "10.255.255.1:1"); errors.Is(err, ErrBlocked) {
+		t.Errorf("a private proxy address was blocked: %v", err)
+	}
+}
+
+func TestRedirectsNeverGoFromHTTPSToHTTP(t *testing.T) {
+	https, _ := http.NewRequest("GET", "https://a.example/", nil)
+	plain, _ := http.NewRequest("GET", "http://a.example/", nil)
+	if err := checkRedirect(plain, []*http.Request{https}); err == nil {
+		t.Error("a downgrade was followed")
+	}
+	if err := checkRedirect(https, []*http.Request{plain}); err != nil {
+		t.Errorf("an upgrade was refused: %v", err)
+	}
+	if err := checkRedirect(plain, []*http.Request{plain}); err != nil {
+		t.Errorf("plain to plain was refused: %v", err)
 	}
 }

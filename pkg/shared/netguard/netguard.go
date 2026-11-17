@@ -12,8 +12,11 @@ package netguard
 import (
 	"errors"
 	"net"
+	"net/http"
 	"net/netip"
+	"os"
 	"syscall"
+	"time"
 )
 
 // ErrBlocked is returned for an address the guard refuses. The text names no address: it may reach a
@@ -77,4 +80,38 @@ func Control(allowPrivate func() bool) func(network, address string, c syscall.R
 		}
 		return Check(ip, allowPrivate())
 	}
+}
+
+// maxRedirects is how many redirects an outside client follows.
+const maxRedirects = 10
+
+// proxyVariables are the environment variables that send a client through a proxy.
+var proxyVariables = []string{"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"}
+
+// OutsideClient returns an HTTP client for a worker's calls to an outside service whose address is a
+// constant (Withings, Strength Level): its dialer refuses the addresses Check refuses, so a redirect or
+// a name that points inside the network gets nowhere, and it follows no more than a few redirects and
+// never from https to http. Behind a proxy the address it dials is the proxy's, which is usually a
+// private one; the guard then lets private addresses through (it still refuses the metadata services
+// and link-local ones).
+func OutsideClient(timeout time.Duration) *http.Client {
+	proxied := false
+	for _, v := range proxyVariables {
+		if os.Getenv(v) != "" {
+			proxied = true
+		}
+	}
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.DialContext = (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second, Control: Control(func() bool { return proxied })}).DialContext
+	return &http.Client{Timeout: timeout, Transport: t, CheckRedirect: checkRedirect}
+}
+
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return errors.New("too many redirects")
+	}
+	if len(via) > 0 && via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+		return errors.New("redirected from https to http")
+	}
+	return nil
 }

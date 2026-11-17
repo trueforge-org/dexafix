@@ -75,6 +75,9 @@ func backendHTTPClient(cmd *cobra.Command, backendURL string) (*http.Client, boo
 	case u.Scheme != "https":
 		return apiclient.HTTPClient(nil), false, nil
 	}
+	if name == "" {
+		name = u.Hostname() // an IP address is checked against the certificate's addresses too: Go leaves the name empty then
+	}
 	cfg, err := mtls.ClientConfig(ca, cert, key, name)
 	if err != nil {
 		return nil, false, fmt.Errorf("mutual TLS to the backend: %w", err)

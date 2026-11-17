@@ -31,11 +31,14 @@ const (
 	settingLabelMail      = "Allow the mail server on a private network address"
 )
 
-// newProviderClient is the HTTP client for the sign-in providers: the default transport (proxy
-// from the environment, HTTP/2) with the guard on its dialer, and redirects held to the same rule as
+// newProviderClient is the HTTP client for the sign-in providers: the default transport (HTTP/2, no
+// proxy) with the guard on its dialer, and redirects held to the same rule as
 // the address an administrator typed.
 func (s *Backend) newProviderClient() *http.Client {
 	t := http.DefaultTransport.(*http.Transport).Clone()
+	// No proxy from the environment: the guard below checks the address that is dialled, which behind
+	// a proxy is the proxy's, so a provider address typed by an administrator would not be checked at all.
+	t.Proxy = nil
 	t.DialContext = (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second, Control: netguard.Control(s.allowPrivateProviders)}).DialContext
 	return &http.Client{Timeout: providerTimeout, Transport: t, CheckRedirect: checkProviderRedirect}
 }

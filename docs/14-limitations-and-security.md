@@ -69,9 +69,13 @@
   and turning one on does not open the other. A server on the same machine
   (`localhost`) is always allowed. A failed connection is reported to
   the administrator without what the other end answered; the details are in the
-  server log. If the api process uses an HTTP proxy from `HTTPS_PROXY`, the check
-  applies to the proxy, not to the address behind it. Everything else that talks
-  to the outside is a [worker](16-workers.md).
+  server log. The api process takes no
+  proxy from `HTTPS_PROXY` and the like for these connections, because the check
+  would then apply to the proxy, not to the address behind it. Everything else
+  that talks to the outside is a [worker](16-workers.md). Workers refuse private,
+  link-local and metadata addresses too, follow at most ten redirects and never
+  one from `https` to `http`; behind a proxy (`HTTPS_PROXY`) they may dial the
+  proxy's private address.
 - **Sensitive changes need a recent sign-in when there is no password.** A user
   who signs in with a provider or a passkey only, or any user while password
   sign-in is off, must have signed in within the last 10 minutes to make a

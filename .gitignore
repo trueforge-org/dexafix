@@ -9,6 +9,9 @@
 # browser captures can hold passwords and session cookies
 *.har
 
+# the secrets `dexafix secrets init` makes for the Compose deployment
+/deploy/secrets/
+
 # Claude Code agent worktrees
 .claude/worktrees/
 

@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/trueforge-org/dexafix/pkg/shared/netguard"
 	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
 	"github.com/trueforge-org/dexafix/pkg/workers/runner"
 )
@@ -40,10 +41,11 @@ type Worker struct {
 	now  func() time.Time
 }
 
-// New returns a worker. A nil client uses a 30 s timeout.
+// New returns a worker. A nil client is one with a 30 s timeout that refuses private addresses and
+// follows few redirects (netguard.OutsideClient).
 func New(cfg Config, client *http.Client) *Worker {
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = netguard.OutsideClient(30 * time.Second)
 	}
 	return &Worker{cfg: cfg, http: client, now: time.Now}
 }

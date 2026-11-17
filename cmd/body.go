@@ -92,6 +92,9 @@ func bodyClient(cmd *cobra.Command) (c *bodyapi.Client, secrets []string, remote
 	}
 	var tlsConfig *tls.Config
 	if u.Scheme == "https" {
+		if name == "" {
+			name = u.Hostname() // an IP address is checked against the certificate's addresses too: Go leaves the name empty then
+		}
 		if tlsConfig, err = mtls.ClientConfig(ca, cert, key, name); err != nil {
 			return nil, nil, false, fmt.Errorf("mutual TLS to the body service: %w", err)
 		}

@@ -277,9 +277,15 @@ func ClientConfig(caFile, certFile, keyFile, serverName string) (*tls.Config, er
 			if len(cs.PeerCertificates) == 0 {
 				return errors.New("the backend presented no certificate")
 			}
+			// The name that was asked for, not cs.ServerName: for an IP address Go sends no SNI and
+			// leaves the state's name empty, which would skip the check of the certificate's addresses.
+			name := serverName
+			if name == "" {
+				name = cs.ServerName
+			}
 			opts := x509.VerifyOptions{
 				Roots:         pool.get(),
-				DNSName:       cs.ServerName,
+				DNSName:       name,
 				Intermediates: x509.NewCertPool(),
 				KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 			}

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/trueforge-org/dexafix/pkg/shared/must"
+	"github.com/trueforge-org/dexafix/pkg/shared/netguard"
 	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
 )
 
@@ -67,7 +68,7 @@ func newClient(base string, httpClient *http.Client) *Client {
 	if base == "" {
 		base = DefaultBase
 	}
-	hc := http.Client{Timeout: 30 * time.Second}
+	hc := *netguard.OutsideClient(30 * time.Second)
 	if httpClient != nil {
 		hc = *httpClient
 	}

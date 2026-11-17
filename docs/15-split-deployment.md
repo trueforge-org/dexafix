@@ -252,6 +252,10 @@ dev container). Then a bind mount such as `./secrets` is not visible to it: use 
 normal host, or put `./secrets` in a volume as the test setup in
 `deploy.instructions.md` does.
 
+`deploy/secrets/` holds every secret of the deployment: it is in `.gitignore`, and
+must never be committed or shared. Its directory is private (`0700`); the files in it
+are readable by whoever can enter the directory.
+
 ### Resource limits
 
 Every container in the Compose file has a ceiling on memory, CPU and processes,
@@ -601,7 +605,9 @@ Each flag has an environment variable, see [Configuration](02-configuration.md).
 - Web needs an `https://` URL in `--backend-url` together with all three
   `--backend-*-file` options. The files with an `http://` URL are an error.
 - If the name in the backend's certificate is not the host of `--backend-url`,
-  set `--backend-server-name` to the name in the certificate.
+  set `--backend-server-name` to the name in the certificate. An address in
+  `--backend-url` (`https://10.0.0.5:8081`) is checked against the addresses in
+  the certificate in the same way, so the certificate must carry it.
 
 ### Rotating the certificates
 
