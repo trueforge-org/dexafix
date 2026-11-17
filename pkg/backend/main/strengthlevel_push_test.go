@@ -120,3 +120,61 @@ func TestWithingsImportQueuesTheStrengthLevelPushOnlyWhenReadingsChanged(t *test
 		t.Fatalf("%d sends after new data, want 1", count())
 	}
 }
+
+// An administrator allows the two automatic syncs per user; the users' own switches stay off, and
+// forbidding Strength Level sync also takes the push permission away.
+func TestAdminAllowsTheAutomaticSyncsPerUser(t *testing.T) {
+	ctx := context.Background()
+	r := newJobRig(t)
+	allowed := func() models.User {
+		u, err := r.st.GetUser(ctx, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+	if res, err := r.api.AdminSetStrengthLevelPush(r.root, 2, true); err != nil || res.Message != "Enable Strength Level sync for alice first." {
+		t.Fatalf("push before Strength Level sync: %+v %v", res, err)
+	}
+	if allowed().StrengthLevelPushAllowed {
+		t.Fatal("the push was allowed for a user without Strength Level sync")
+	}
+	for _, f := range []func() error{
+		func() error { _, err := r.api.AdminSetStrengthLevel(r.root, 2, true); return err },
+		func() error { _, err := r.api.AdminSetStrengthLevelPush(r.root, 2, true); return err },
+		func() error { _, err := r.api.AdminSetWithingsAuto(r.root, 2, true); return err },
+	} {
+		if err := f(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	u := allowed()
+	if !u.StrengthLevelPushAllowed || !u.WithingsAutoAllowed || u.StrengthLevelPush || u.WithingsAuto {
+		t.Fatalf("permissions %+v: both must be allowed and neither switched on", u)
+	}
+	page, err := r.api.AdminPage(r.root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen bool
+	for _, x := range page.Users {
+		if x.ID == 2 {
+			seen = x.WithingsAuto && x.StrengthLevelPush
+		}
+	}
+	if !seen {
+		t.Fatal("the admin page does not show the permissions")
+	}
+	if err := r.st.SetUserStrengthLevelPush(ctx, 2, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.api.AdminSetStrengthLevel(r.root, 2, false); err != nil {
+		t.Fatal(err)
+	}
+	if u = allowed(); u.StrengthLevelPushAllowed || u.StrengthLevelPush || !u.WithingsAutoAllowed {
+		t.Fatalf("after forbidding Strength Level: %+v", u)
+	}
+	if _, err := r.api.AdminSetWithingsAuto(r.alice, 2, true); err == nil {
+		t.Fatal("a user changed their own permission")
+	}
+}

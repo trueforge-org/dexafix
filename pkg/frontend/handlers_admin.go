@@ -34,6 +34,8 @@ func (s *Frontend) adminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /admin/users/{id}/role", s.admin(s.adminSetRole))
 	mux.HandleFunc("POST /admin/users/{id}/strengthlevel", s.admin(s.adminSetStrengthLevel))
 	mux.HandleFunc("POST /admin/users/{id}/strengthlevel-bulk", s.admin(s.adminSetStrengthLevelBulk))
+	mux.HandleFunc("POST /admin/users/{id}/withings-auto", s.admin(s.adminSetWithingsAuto))
+	mux.HandleFunc("POST /admin/users/{id}/strengthlevel-push", s.admin(s.adminSetStrengthLevelPush))
 	mux.HandleFunc("POST /admin/users/{id}/password", s.admin(s.adminSetPassword))
 	mux.HandleFunc("POST /admin/users/{id}/delete", s.admin(s.adminDeleteUser))
 	mux.HandleFunc("POST /admin/password-login", s.admin(s.adminPasswordLogin))
@@ -177,6 +179,24 @@ func (s *Frontend) adminSetStrengthLevelBulk(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	res, err := s.api.AdminSetStrengthLevelBulk(r.Context(), id, r.PostFormValue("enabled") == "1")
+	s.adminDone(w, r, res, err)
+}
+
+func (s *Frontend) adminSetWithingsAuto(w http.ResponseWriter, r *http.Request, _ models.User) {
+	id, ok := targetID(w, r)
+	if !ok {
+		return
+	}
+	res, err := s.api.AdminSetWithingsAuto(r.Context(), id, r.PostFormValue("enabled") == "1")
+	s.adminDone(w, r, res, err)
+}
+
+func (s *Frontend) adminSetStrengthLevelPush(w http.ResponseWriter, r *http.Request, _ models.User) {
+	id, ok := targetID(w, r)
+	if !ok {
+		return
+	}
+	res, err := s.api.AdminSetStrengthLevelPush(r.Context(), id, r.PostFormValue("enabled") == "1")
 	s.adminDone(w, r, res, err)
 }
 

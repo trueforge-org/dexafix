@@ -47,6 +47,8 @@ const (
 	auditPasswordSet      = "password_set_by_admin"
 	auditStrengthLevel    = "strengthlevel_permission_changed"
 	auditStrengthLevelBlk = "strengthlevel_bulk_permission_changed"
+	auditWithingsAuto     = "withings_auto_permission_changed"
+	auditStrengthLevelPsh = "strengthlevel_push_permission_changed"
 	auditSettingChanged   = "server_setting_changed"
 	auditProviderSaved    = "provider_saved"
 	auditProviderRemoved  = "provider_removed"
@@ -86,7 +88,8 @@ var auditLabels = map[string]string{
 	auditConnect: "Integration connected", auditDisconnect: "Integration disconnected",
 	auditUserAdded: "User added", auditUserDeleted: "User deleted", auditRoleChanged: "Role changed",
 	auditPasswordSet: "Password set by an administrator", auditStrengthLevel: "Strength Level permission changed",
-	auditStrengthLevelBlk: "Strength Level multi-day permission changed", auditSettingChanged: "Server setting changed",
+	auditStrengthLevelBlk: "Strength Level multi-day permission changed",
+	auditWithingsAuto:     "Daily Withings sync permission changed", auditStrengthLevelPsh: "Automatic Strength Level send permission changed", auditSettingChanged: "Server setting changed",
 	auditProviderSaved: "Sign-in provider saved", auditProviderRemoved: "Sign-in provider removed",
 	auditJobPriority: "Job priority changed", auditJobCanceled: "Job canceled by an administrator", auditWorkerLease: "Job handed to a worker",
 	auditTOTPEnabled: "Two-step verification turned on", auditTOTPDisabled: "Two-step verification turned off",

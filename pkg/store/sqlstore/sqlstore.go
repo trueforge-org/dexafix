@@ -507,6 +507,7 @@ func (s *Store) SetUserStrengthLevelAuto(ctx context.Context, userID int64, enab
 	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		res, err := tx.NewUpdate().Model((*userRow)(nil)).
 			Set("strengthlevel_auto = ?", enabled).Set("strengthlevel_bulk = strengthlevel_bulk AND ?", enabled).
+			Set("strengthlevel_push_allowed = strengthlevel_push_allowed AND ?", enabled).Set("strengthlevel_push = strengthlevel_push AND ?", enabled).
 			Where("id = ?", userID).Exec(ctx)
 		if err != nil {
 			return err

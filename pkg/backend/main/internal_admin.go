@@ -35,6 +35,8 @@ func (s *Backend) internalAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+p+"/users/{id}/role", s.internalAdmin(s.internalAdminSetRole))
 	mux.HandleFunc("POST "+p+"/users/{id}/strengthlevel", s.internalAdmin(s.internalAdminSetStrengthLevel))
 	mux.HandleFunc("POST "+p+"/users/{id}/strengthlevel-bulk", s.internalAdmin(s.internalAdminSetStrengthLevelBulk))
+	mux.HandleFunc("POST "+p+"/users/{id}/withings-auto", s.internalAdmin(s.internalAdminSetWithingsAuto))
+	mux.HandleFunc("POST "+p+"/users/{id}/strengthlevel-push", s.internalAdmin(s.internalAdminSetStrengthLevelPush))
 	mux.HandleFunc("POST "+p+"/users/{id}/password", s.internalAdmin(s.internalAdminSetPassword))
 	mux.HandleFunc("POST "+p+"/analytics", s.internalAdmin(s.internalAdminSaveAnalytics))
 	mux.HandleFunc("POST "+p+"/ads-txt", s.internalAdmin(s.internalAdminSaveAdsTxt))
@@ -168,7 +170,7 @@ func (s *Backend) internalAdminPage(w http.ResponseWriter, r *http.Request, u mo
 		}
 		view.Users = append(view.Users, apiclient.AdminUser{ID: x.ID, Username: x.Username, FirstName: x.FirstName, LastName: x.LastName, Email: x.Email, Admin: x.IsAdmin(), Self: x.ID == u.ID,
 			Created: x.CreatedAt.UTC().Format(dateLayout), SignIn: signIn, StrengthLevel: x.StrengthLevelAuto,
-			StrengthLevelBulk: x.StrengthLevelBulk, TwoFactor: twoFactor[x.ID], JobPriority: x.JobPriority})
+			StrengthLevelBulk: x.StrengthLevelBulk, WithingsAuto: x.WithingsAutoAllowed, StrengthLevelPush: x.StrengthLevelPushAllowed, TwoFactor: twoFactor[x.ID], JobPriority: x.JobPriority})
 	}
 	events, err := s.store.ListAuditEvents(ctx, store.AuditFilter{Limit: auditPageSize})
 	if err != nil {
@@ -327,6 +329,56 @@ func (s *Backend) internalAdminSetStrengthLevelBulk(w http.ResponseWriter, r *ht
 	}
 	s.stopStrengthLevel(r.Context(), t.ID, kindStrengthLevelSync)
 	adminMsg(w, "The multi-day Strength Level sync is off for "+t.Username+".")
+}
+
+// internalAdminSetWithingsAuto allows or forbids the daily Withings sync for a user. The user still has
+// to switch it on themselves.
+func (s *Backend) internalAdminSetWithingsAuto(w http.ResponseWriter, r *http.Request, _ models.User) {
+	t, ok := s.internalTarget(w, r)
+	if !ok {
+		return
+	}
+	var in struct{ Enabled bool }
+	if !internalDecode(w, r, &in) {
+		return
+	}
+	if err := s.store.SetUserWithingsAutoAllowed(r.Context(), t.ID, in.Enabled); err != nil {
+		internalError(w, err)
+		return
+	}
+	s.audit(r, t.ID, auditWithingsAuto, onOff(in.Enabled))
+	if in.Enabled {
+		adminMsg(w, t.Username+" may now switch on the daily Withings sync in Settings.")
+		return
+	}
+	adminMsg(w, "The daily Withings sync is off for "+t.Username+".")
+}
+
+// internalAdminSetStrengthLevelPush allows or forbids sending the last days to Strength Level after
+// new scale data. It needs Strength Level sync, and the user still has to switch it on themselves.
+func (s *Backend) internalAdminSetStrengthLevelPush(w http.ResponseWriter, r *http.Request, _ models.User) {
+	t, ok := s.internalTarget(w, r)
+	if !ok {
+		return
+	}
+	var in struct{ Enabled bool }
+	if !internalDecode(w, r, &in) {
+		return
+	}
+	if in.Enabled && !t.StrengthLevelAuto {
+		adminMsg(w, "Enable Strength Level sync for "+t.Username+" first.")
+		return
+	}
+	if err := s.store.SetUserStrengthLevelPushAllowed(r.Context(), t.ID, in.Enabled); err != nil {
+		internalError(w, err)
+		return
+	}
+	s.audit(r, t.ID, auditStrengthLevelPsh, onOff(in.Enabled))
+	if in.Enabled {
+		adminMsg(w, t.Username+" may now switch on the automatic send to Strength Level in Settings.")
+		return
+	}
+	adminMsg(w, "The automatic send to Strength Level is off for "+t.Username+".")
 }
 
 func (s *Backend) internalAdminSetPassword(w http.ResponseWriter, r *http.Request, _ models.User) {

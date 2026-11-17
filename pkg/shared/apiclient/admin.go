@@ -74,6 +74,11 @@ type AdminUser struct {
 	StrengthLevel bool
 	// StrengthLevelBulk is whether the user may also run the multi-day sync from Settings.
 	StrengthLevelBulk bool
+	// WithingsAuto is whether the user may switch on the daily Withings sync.
+	WithingsAuto bool
+	// StrengthLevelPush is whether the user may switch on the automatic send to Strength Level
+	// after new scale data. It needs StrengthLevel.
+	StrengthLevelPush bool
 	TwoFactor         bool // two-step verification is on
 	// JobPriority (1-100) orders the user's worker jobs among other users'; a higher number goes
 	// first, and administrators always go before everyone.
@@ -183,6 +188,14 @@ func (c *Client) AdminSetStrengthLevel(ctx context.Context, id int64, on bool) (
 
 func (c *Client) AdminSetStrengthLevelBulk(ctx context.Context, id int64, on bool) (AdminResult, error) {
 	return c.adminDo(ctx, http.MethodPost, adminUserPath(id, "/strengthlevel-bulk"), map[string]bool{"enabled": on})
+}
+
+func (c *Client) AdminSetWithingsAuto(ctx context.Context, id int64, on bool) (AdminResult, error) {
+	return c.adminDo(ctx, http.MethodPost, adminUserPath(id, "/withings-auto"), map[string]bool{"enabled": on})
+}
+
+func (c *Client) AdminSetStrengthLevelPush(ctx context.Context, id int64, on bool) (AdminResult, error) {
+	return c.adminDo(ctx, http.MethodPost, adminUserPath(id, "/strengthlevel-push"), map[string]bool{"enabled": on})
 }
 
 func (c *Client) AdminSetPassword(ctx context.Context, id int64, password string) (AdminResult, error) {
