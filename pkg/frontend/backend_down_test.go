@@ -113,3 +113,17 @@ func TestEveryPageSaysTheBackendIsUnavailableWhenItFails(t *testing.T) {
 		})
 	}
 }
+
+// The status page is where a visitor finds out what is down: it answers, as itself, while the
+// backend cannot say who is signed in, and every other page still says it is unavailable.
+func TestTheStatusPageAnswersWhenTheBackendCannotSayWhoIsSignedIn(t *testing.T) {
+	fs := newFaultStack(t)
+	fs.failAll(serverError)
+	res := fs.get("/status")
+	if strings.Contains(res.body, "temporarily unavailable, try again") || !strings.Contains(strings.ToLower(res.body), "status") {
+		t.Fatalf("status: %d %q", res.code, res.body)
+	}
+	if res := fs.get("/u/1/settings"); res.code != http.StatusServiceUnavailable {
+		t.Errorf("another page: %d", res.code)
+	}
+}

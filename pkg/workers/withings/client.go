@@ -178,6 +178,10 @@ func (w *Worker) requestToken(ctx context.Context, app workerapi.OAuthApp, form 
 	}, nil
 }
 
+// maxMeasureGroups is the most measurement groups one import collects; the backend refuses a result
+// with more readings than this anyway.
+const maxMeasureGroups = 200000
+
 // getMeas fetches all real measurement groups (category 1) in [start, end]; zero times are open ends.
 func (w *Worker) getMeas(ctx context.Context, accessToken string, start, end time.Time) ([]measureGroup, error) {
 	var all []measureGroup
@@ -198,6 +202,9 @@ func (w *Worker) getMeas(ctx context.Context, accessToken string, start, end tim
 			return nil, err
 		}
 		all = append(all, b.Groups...)
+		if len(all) > maxMeasureGroups { // more than the backend takes in one result, and all of it in memory
+			return nil, fmt.Errorf("withings getmeas: more than %d measurements; import a shorter period", maxMeasureGroups)
+		}
 		if b.More == 0 {
 			return all, nil
 		}

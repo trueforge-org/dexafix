@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/quic-go/quic-go/http3"
@@ -161,8 +162,17 @@ func (s *Frontend) altSvc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if l := s.cfg(); r.TLS != nil && l.http3 {
 			port := l.httpsPort
-			if _, p, err := net.SplitHostPort(r.Host); err == nil {
-				port = p // the port the client used, which may differ behind a port mapping
+			switch {
+			case l.baseURL != nil && l.baseURL.Port() != "":
+				port = l.baseURL.Port() // the address the administrator named: not for a client to choose
+			default:
+				// The port the client used, which may differ behind a port mapping; it is a request
+				// header, so it is only believed when it is a port number.
+				if _, p, err := net.SplitHostPort(r.Host); err == nil {
+					if n, err := strconv.Atoi(p); err == nil && n > 0 && n < 65536 {
+						port = p
+					}
+				}
 			}
 			w.Header().Set("Alt-Svc", fmt.Sprintf(`h3=":%s"; ma=%d`, port, int(h3MaxAge.Seconds())))
 		}

@@ -125,3 +125,27 @@ func TestConsentScriptKeepsThePrivacyPromises(t *testing.T) {
 		t.Errorf("unexpected output: %s", out)
 	}
 }
+
+// The page that asks for a password never offers ads: AdSense widens the script policy to inline
+// scripts, and nothing of the kind belongs there.
+func TestTheSignInPageOffersNoAds(t *testing.T) {
+	s := &Frontend{}
+	s.swapSettings(&frontendSettings{tlsMode: apiclient.TLSOff, analytics: apiclient.Analytics{
+		ScarfPixelID: "123e4567-e89b-12d3-a456-426614174000", AdSensePublisher: "ca-pub-1234567890123456",
+	}})
+	tr := s.trackingForSignIn()
+	if tr == nil || tr.AdSense != "" || tr.Scarf == "" || tr.Names != "Scarf" {
+		t.Fatalf("sign-in tracking %+v", tr)
+	}
+	if scripts := directive(tr.csp(), "script-src"); has(scripts, "'unsafe-inline'") {
+		t.Errorf("the sign-in page's script policy allows inline scripts: %v", scripts)
+	}
+	if other := s.trackingFor(nil); other == nil || other.AdSense == "" {
+		t.Errorf("other public pages lost their ads: %+v", other)
+	}
+	// With only ads turned on the sign-in page has nothing at all.
+	s.swapSettings(&frontendSettings{tlsMode: apiclient.TLSOff, analytics: apiclient.Analytics{AdSensePublisher: "ca-pub-1234567890123456"}})
+	if tr := s.trackingForSignIn(); tr != nil {
+		t.Errorf("an ads-only setting gave the sign-in page %+v", tr)
+	}
+}

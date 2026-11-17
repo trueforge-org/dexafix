@@ -43,6 +43,10 @@ func (s *Frontend) frontAuth(next http.Handler) http.Handler {
 		}
 		u, err := s.api.Session(r.Context())
 		if err != nil {
+			if r.URL.Path == "/status" { // the page that says what is down must not itself be down
+				next.ServeHTTP(w, r)
+				return
+			}
 			s.backendDown(w, r, err)
 			return
 		}

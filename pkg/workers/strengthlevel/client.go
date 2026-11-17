@@ -260,9 +260,10 @@ func (c *Client) write(ctx context.Context, method, path, day string, payload ma
 		return err
 	}
 	defer resp.Body.Close()
-	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("strengthlevel: %s %s: %s %s", method, day, resp.Status, strings.TrimSpace(string(msg)))
+		// The status only: what the other end answered goes into the job's error and the logs, and
+		// may be a page of anything.
+		return fmt.Errorf("strengthlevel: %s %s: %s", method, day, resp.Status)
 	}
 	return nil
 }

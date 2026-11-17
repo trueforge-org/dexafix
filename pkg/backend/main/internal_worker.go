@@ -32,10 +32,11 @@ import (
 // error text is clipped, and nothing a worker sends picks the user, the kind or the credentials.
 
 const (
-	workerMaxBody       = 16 << 20 // an import result can hold years of readings
-	workerMaxProgress   = 16 << 10
-	workerMaxCredential = 64 << 10
-	workerMaxErrorText  = 500
+	workerMaxBody         = 16 << 20 // an import result can hold years of readings
+	workerMaxProgress     = 16 << 10
+	workerMaxCredential   = 64 << 10
+	workerMaxErrorText    = 500
+	workerMaxStoredResult = 1 << 20 // what a job keeps of its result
 
 	workerMaxInFlight = 64
 	workerMaxQueue    = 128
@@ -511,6 +512,11 @@ func (s *Backend) workerComplete(w http.ResponseWriter, r *http.Request) {
 			log.Error().Err(err).Str("job", job.PublicID).Str("kind", job.Kind).Msg("could not apply a worker's result")
 			internalFail(w, http.StatusServiceUnavailable, apiclient.CodeUnavailable, "could not store the result")
 			return
+		case len(stored) > workerMaxStoredResult:
+			// What a kind keeps of a result is a summary; one this large is not, and is stored in the
+			// database for as long as the job history is kept.
+			log.Warn().Str("job", job.PublicID).Str("kind", job.Kind).Int("bytes", len(stored)).Msg("a worker's result is too large to keep")
+			comp = models.Completion{Outcome: models.OutcomeFail, Error: "the result was too large to keep"}
 		default:
 			comp.Result = stored
 		}

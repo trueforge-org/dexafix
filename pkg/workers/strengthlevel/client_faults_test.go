@@ -168,7 +168,7 @@ func TestWriteFailuresAreReportedPerDay(t *testing.T) {
 		fail func(w http.ResponseWriter)
 		want string // part of the message; "" for any error
 	}{
-		{"the site refuses the write", func(w http.ResponseWriter) { http.Error(w, "boom", http.StatusInternalServerError) }, "POST 2026-11-07: 500 Internal Server Error boom"},
+		{"the site refuses the write", func(w http.ResponseWriter) { http.Error(w, "boom", http.StatusInternalServerError) }, "POST 2026-11-07: 500 Internal Server Error"},
 		{"the connection drops", func(w http.ResponseWriter) { dropConnection() }, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -178,6 +178,9 @@ func TestWriteFailuresAreReportedPerDay(t *testing.T) {
 			err := c.Add(ctx, entry)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("Add: %v", err)
+			}
+			if strings.Contains(err.Error(), "boom") {
+				t.Fatalf("what the site answered is in the error: %v", err)
 			}
 			if err := c.Update(ctx, old, entry); err == nil {
 				t.Fatal("Update must fail too")

@@ -169,3 +169,23 @@ func TestLeasesAreRateLimitedPerSecret(t *testing.T) {
 		t.Error("the budget of one secret was used up by another")
 	}
 }
+
+// What a job keeps of its result is a summary: one beyond a megabyte is not kept, the job fails.
+func TestAResultTooLargeToKeepFailsTheJob(t *testing.T) {
+	f := newScriptedFixture(t)
+	ctx := context.Background()
+	f.sc.set(func(s *scripted) {
+		s.apply = func(context.Context, *Backend, models.Job, json.RawMessage) (string, error) {
+			return `"` + strings.Repeat("x", workerMaxStoredResult) + `"`, nil
+		}
+	})
+	j := f.queue(t, scriptKind, models.JobOriginUser)
+	l := f.leaseKind(t, scriptKind)
+	if err := f.client.Complete(ctx, l.Job.ID, l.Token, workerapi.Completion{Outcome: models.OutcomeOK, Result: json.RawMessage(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	got := f.job(t, j.PublicID)
+	if got.State != models.JobFailed || got.Result != "" || !strings.Contains(got.Error, "too large") {
+		t.Fatalf("%+v", got)
+	}
+}

@@ -33,7 +33,20 @@ func (s *Frontend) trackingFor(u *models.User) *trackingView {
 	if !a.Any() {
 		return nil
 	}
-	t := &trackingView{Scarf: a.ScarfPixelID, GA: a.GoogleAnalyticsID, AdSense: a.AdSensePublisher}
+	return newTrackingView(a.ScarfPixelID, a.GoogleAnalyticsID, a.AdSensePublisher)
+}
+
+// trackingForSignIn is trackingFor for the page where people type their passwords: without ads. Google's
+// guidance for AdSense widens the script policy of the page to inline scripts, and nothing of the
+// kind belongs on the page that asks for credentials.
+func (s *Frontend) trackingForSignIn() *trackingView {
+	a := s.cfg().analytics
+	return newTrackingView(a.ScarfPixelID, a.GoogleAnalyticsID, "")
+}
+
+// newTrackingView lists the services that are on, or is nil when none is.
+func newTrackingView(scarf, ga, adsense string) *trackingView {
+	t := &trackingView{Scarf: scarf, GA: ga, AdSense: adsense}
 	var names []string
 	if t.Scarf != "" {
 		names = append(names, "Scarf")
@@ -45,6 +58,8 @@ func (s *Frontend) trackingFor(u *models.User) *trackingView {
 		names = append(names, "Google AdSense")
 	}
 	switch len(names) {
+	case 0:
+		return nil
 	case 1:
 		t.Names = names[0]
 	default:
