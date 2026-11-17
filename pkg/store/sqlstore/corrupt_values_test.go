@@ -76,17 +76,25 @@ func TestRekeyNeedsAKey(t *testing.T) {
 	}
 }
 
-func TestRekeyLeavesValuesWrittenBeforeTheKeyForTheNextStart(t *testing.T) {
+// A database that held values before a key was set moves to all-encrypted with db rekey: the plain
+// values are sealed, still readable, and a second run has nothing left to do.
+func TestRekeySealsValuesWrittenBeforeTheKey(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newFaultyStore(t, nil)
 	seedFaultData(t, s)
 	withKeys(t, s, 1)
 	stats, err := s.Rekey(ctx, false)
-	if err != nil || stats.Emails+stats.Settings+stats.Integrations+stats.Providers+stats.TOTP+stats.Jobs+stats.Body != 0 {
+	if err != nil || stats.Emails == 0 || stats.Settings == 0 || stats.Integrations == 0 || stats.Body == 0 {
 		t.Fatalf("rekey of plain values: %+v %v", stats, err)
 	}
-	if v := rawColumn(t, s, rawSetting); v != "v" {
-		t.Fatalf("a plain setting was changed to %q", v)
+	if v := rawColumn(t, s, rawSetting); !strings.HasPrefix(v, encV2) {
+		t.Fatalf("a plain setting was left as %q", v)
+	}
+	if got, err := s.GetSetting(ctx, "k"); err != nil || got != "v" {
+		t.Fatalf("the sealed setting reads %q %v", got, err)
+	}
+	if again, err := s.Rekey(ctx, false); err != nil || again.Changed() != 0 {
+		t.Fatalf("second run: %+v %v", again, err)
 	}
 }
 

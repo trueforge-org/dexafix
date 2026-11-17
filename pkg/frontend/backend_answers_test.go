@@ -166,7 +166,7 @@ func TestMessagesInRedirectsAreCutToAReasonableLength(t *testing.T) {
 			t.Errorf("%s: %q", name, rec.Header().Get("Location"))
 		}
 	}
-	r := httptest.NewRequest("GET", "/?msg="+long, nil)
+	r := httptest.NewRequest("GET", "/?"+apiclient.FlashQuery(long), nil)
 	if got := flashParam(r); len(got) != maxFlashLen {
 		t.Errorf("flashParam kept %d characters", len(got))
 	}

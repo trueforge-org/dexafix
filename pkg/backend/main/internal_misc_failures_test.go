@@ -51,10 +51,10 @@ func TestAProviderNameIsShownWithACapital(t *testing.T) {
 
 func TestAMessageThatIsTooLongForAFlashIsCut(t *testing.T) {
 	long := strings.Repeat("x", maxFlashLen+50)
-	if got := settingsPath(1, long); len(got) > len("/u/1/settings?msg=")+maxFlashLen {
+	if got := settingsPath(1, long); len(got) > len("/u/1/settings?msg=")+maxFlashLen+len("&sig=")+32 {
 		t.Errorf("settings path %d bytes", len(got))
 	}
-	r := httptest.NewRequest("GET", "/?msg="+long, nil)
+	r := httptest.NewRequest("GET", "/?msg="+long, nil) // this one is the internal API's: no signature
 	if got := flashParam(r); len(got) != maxFlashLen {
 		t.Errorf("flash %d bytes, want %d", len(got), maxFlashLen)
 	}

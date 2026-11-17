@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
 	"github.com/trueforge-org/dexafix/pkg/store"
 	"github.com/trueforge-org/dexafix/pkg/store/sqlstore"
 	"github.com/trueforge-org/dexafix/pkg/workers/builtin"
@@ -485,8 +486,14 @@ func TestWithingsFlow(t *testing.T) {
 	if msg := flash(post(t, c, ts.URL+"/u/1/import/withings", url.Values{"day": {"nope"}})); !strings.Contains(msg, "day must be") {
 		t.Fatalf("bad day msg %q", msg)
 	}
-	if code, b := body(t, c, ts.URL+"/u/1/estimates?msg=hello+there"); code != 200 || !strings.Contains(b, "hello there") {
+	if code, b := body(t, c, ts.URL+"/u/1/estimates?"+apiclient.FlashQuery("hello there")); code != 200 || !strings.Contains(b, "hello there") {
 		t.Fatalf("flash not shown: %d", code)
+	}
+	// A link somebody made up has no signature, or somebody else's: its text is not shown.
+	for _, q := range []string{"msg=send+your+password+to+evil.example", "msg=send+your+password+to+evil.example&sig=00", "msg=send+your+password+to+evil.example&sig=" + strings.Repeat("0", 32)} {
+		if code, b := body(t, c, ts.URL+"/u/1/estimates?"+q); code != 200 || strings.Contains(b, "evil.example") {
+			t.Fatalf("a made-up message was shown (%s): %d", q, code)
+		}
 	}
 
 	if msg := flash(post(t, c, ts.URL+"/u/1/integrations/withings/disconnect", nil)); !strings.Contains(msg, "disconnected") {

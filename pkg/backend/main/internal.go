@@ -44,6 +44,9 @@ func (s *Backend) SetServiceSecrets(secrets ...string) {
 		}
 	}
 	s.serviceSecrets = hashes
+	if len(secrets) > 0 { // the first is the one the web process sends: both sign flash messages with it
+		apiclient.SetFlashKey(strings.TrimSpace(secrets[0]))
+	}
 }
 
 // InternalHandler returns the handler of the internal API.

@@ -64,7 +64,9 @@ Batch readings with an `external_id` are upserted on `source` and
 lies between 1900-01-01 and tomorrow (the same for scans). A
 batch that breaks one of these is refused as a whole with a 400 that names the
 item. Do not use the name of a provider (`withings`) for readings of your own: the
-next import from that provider treats them as its own and may replace them.
+next import from that provider treats them as its own and may replace them. Once
+you have connected a provider, a batch with its name as the `source` is refused
+with a 400; before that the name is still accepted, as it always was.
 
 Readings also take `method` (`scale` by default, or `hydrostatic`, `bodpod`,
 `caliper`, `tape`, `visual-ai`, `manual-entry`) and `athlete_mode`. When `athlete_mode` is left

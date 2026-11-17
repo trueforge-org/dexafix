@@ -2,10 +2,11 @@ package mainbackend
 
 import (
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
 )
 
 // Names and limits of the flows. The two-step verification flow is described in internal_twofactor.go,
@@ -94,7 +95,7 @@ func settingsPath(userID int64, msg string) string {
 	if len(msg) > maxFlashLen {
 		msg = msg[:maxFlashLen]
 	}
-	return userPath(userID, "settings") + "?msg=" + url.QueryEscape(msg)
+	return userPath(userID, "settings") + "?" + apiclient.FlashQuery(msg)
 }
 
 // flashParam reads the message passed to a page after a redirect.

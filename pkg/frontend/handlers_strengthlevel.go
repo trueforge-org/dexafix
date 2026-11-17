@@ -3,14 +3,14 @@ package frontend
 import (
 	"bytes"
 	"net/http"
-	"net/url"
 
 	"github.com/trueforge-org/dexafix/pkg/models"
+	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
 	"github.com/trueforge-org/dexafix/pkg/shared/must"
 )
 
 func settingsFlash(w http.ResponseWriter, r *http.Request, u models.User, msg string) {
-	http.Redirect(w, r, userPath(u.ID, "settings")+"?msg="+url.QueryEscape(msg)+"#strengthlevel", http.StatusSeeOther)
+	http.Redirect(w, r, userPath(u.ID, "settings")+"?"+apiclient.FlashQuery(msg)+"#strengthlevel", http.StatusSeeOther)
 }
 
 func (s *Frontend) strengthLevelSaveLogin(w http.ResponseWriter, r *http.Request, u models.User) {

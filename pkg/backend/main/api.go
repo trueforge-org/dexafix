@@ -1,6 +1,7 @@
 package mainbackend
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -291,6 +292,14 @@ func (s *Backend) apiRoutes(mux *http.ServeMux) {
 		for i := range in {
 			batch[i] = in[i].ScaleReading
 			err := validReadingOrigin(&batch[i])
+			if err == nil && batch[i].Source != "" {
+				if cerr := s.refuseConnectedProviderName(r.Context(), u.ID, batch[i].Source); errors.Is(cerr, errSourceClash) {
+					err = cerr
+				} else if cerr != nil { // our own trouble, not the caller's mistake
+					apiError(w, cerr)
+					return
+				}
+			}
 			if err == nil {
 				err = validScaleReading(&batch[i])
 			}
@@ -422,4 +431,21 @@ func pageOf(f store.ListFilter) bodyapi.Page {
 		p.Before = f.After.String()
 	}
 	return p
+}
+
+var errSourceClash = errors.New("source clash")
+
+// refuseConnectedProviderName refuses a source that is the name of a provider the user has connected:
+// the next import from that provider would replace what was posted under its name (or the other way
+// round). A provider that is not connected is no clash, so scripts that used the name keep working.
+func (s *Backend) refuseConnectedProviderName(ctx context.Context, userID int64, source string) error {
+	if _, ok := s.providerNamed(source); !ok {
+		return nil
+	}
+	if _, err := s.store.GetIntegration(ctx, userID, source); err == nil {
+		return fmt.Errorf("%w: source %q is a provider you have connected: its imports own that name, use another one for your own readings", errSourceClash, source)
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	return nil
 }

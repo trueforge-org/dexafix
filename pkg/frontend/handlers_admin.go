@@ -2,7 +2,6 @@ package frontend
 
 import (
 	"net/http"
-	"net/url"
 	"runtime"
 	"strconv"
 
@@ -91,7 +90,7 @@ func adminRedirect(w http.ResponseWriter, r *http.Request, msg string) {
 	if len(msg) > maxFlashLen {
 		msg = msg[:maxFlashLen]
 	}
-	http.Redirect(w, r, "/admin?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+	http.Redirect(w, r, "/admin?"+apiclient.FlashQuery(msg), http.StatusSeeOther)
 }
 
 // adminDone answers a change: it shows the backend's message on the Admin page. A change of the

@@ -110,7 +110,11 @@ func (s *Frontend) logout(w http.ResponseWriter, r *http.Request) {
 
 // flashParam reads the message passed to a page after a redirect.
 func flashParam(r *http.Request) string {
-	msg := r.URL.Query().Get("msg")
+	q := r.URL.Query()
+	msg := q.Get("msg")
+	if !apiclient.FlashVerify(msg, q.Get("sig")) { // a link somebody made up: no message
+		return ""
+	}
 	if len(msg) > maxFlashLen {
 		msg = msg[:maxFlashLen]
 	}

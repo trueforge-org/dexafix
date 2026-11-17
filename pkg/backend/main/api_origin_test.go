@@ -1,6 +1,7 @@
 package mainbackend
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -43,5 +44,28 @@ func TestTheAPIChecksWhereAndWhenAReadingCameFrom(t *testing.T) {
 				t.Fatalf("status %d %.120q, want 200", s, b)
 			}
 		})
+	}
+}
+
+// A provider's name is refused as the source of readings only once the user has connected it: its
+// imports then own the name. Before that it stays accepted, as it was.
+func TestAConnectedProvidersNameIsNotAUserSource(t *testing.T) {
+	r := newJobRig(t)
+	body := `[{"measured_at":"2026-03-01T08:00:00Z","weight_kg":80,"source":"withings","external_id":"1"}]`
+	if s, b, _ := r.call("POST", "/scale-readings", body); s != 200 {
+		t.Fatalf("not connected: %d %.120q", s, b)
+	}
+	r.connectWithings()
+	if s, b, _ := r.call("POST", "/scale-readings", body); s != 400 || !strings.Contains(b, "connected") {
+		t.Fatalf("connected: %d %.120q", s, b)
+	}
+	own := `[{"measured_at":"2026-03-01T08:00:00Z","weight_kg":80,"source":"my-scale","external_id":"1"}]`
+	if s, b, _ := r.call("POST", "/scale-readings", own); s != 200 {
+		t.Fatalf("another source: %d %.120q", s, b)
+	}
+	// The connection cannot be looked up: the batch is refused instead of let through.
+	breakTable(t, r.st, "user_integrations")
+	if s, _, _ := r.call("POST", "/scale-readings", body); s != http.StatusInternalServerError {
+		t.Fatalf("broken lookup: %d", s)
 	}
 }

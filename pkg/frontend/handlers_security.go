@@ -3,7 +3,6 @@ package frontend
 import (
 	"errors"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/trueforge-org/dexafix/pkg/models"
@@ -97,5 +96,5 @@ func settingsPath(userID int64, msg string) string {
 	if len(msg) > maxFlashLen {
 		msg = msg[:maxFlashLen]
 	}
-	return userPath(userID, "settings") + "?msg=" + url.QueryEscape(msg)
+	return userPath(userID, "settings") + "?" + apiclient.FlashQuery(msg)
 }

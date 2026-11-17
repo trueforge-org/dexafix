@@ -2,7 +2,6 @@ package frontend
 
 import (
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
@@ -43,7 +42,7 @@ func (s *Frontend) workersDone(w http.ResponseWriter, r *http.Request, res apicl
 	if len(msg) > maxFlashLen {
 		msg = msg[:maxFlashLen]
 	}
-	http.Redirect(w, r, "/admin/workers?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+	http.Redirect(w, r, "/admin/workers?"+apiclient.FlashQuery(msg), http.StatusSeeOther)
 }
 
 // wholeNumber reads a form value that must be a whole number; an empty or invalid one is reported.

@@ -2,9 +2,9 @@ package frontend
 
 import (
 	"net/http"
-	"net/url"
 
 	"github.com/trueforge-org/dexafix/pkg/models"
+	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
 )
 
 const (
@@ -15,7 +15,7 @@ func flashRedirect(w http.ResponseWriter, r *http.Request, userID int64, msg str
 	if len(msg) > maxFlashLen {
 		msg = msg[:maxFlashLen]
 	}
-	http.Redirect(w, r, userPath(userID, "estimates")+"?msg="+url.QueryEscape(msg), http.StatusSeeOther)
+	http.Redirect(w, r, userPath(userID, "estimates")+"?"+apiclient.FlashQuery(msg), http.StatusSeeOther)
 }
 
 // integrationPageRoutes registers the pages of imports and the OAuth flow. Everything is per user.

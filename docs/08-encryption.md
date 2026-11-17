@@ -80,7 +80,8 @@ the key:
    old key on a line of its own. Several previous keys are allowed.
 4. Run `dexafix db rekey --dry-run` to see how many values would change. It
    fails if any value cannot be opened by one of the keys.
-5. Run `dexafix db rekey`. In a single transaction it re-encrypts the e-mail
+5. Run `dexafix db rekey`. In a single transaction it seals every value that was written before a key
+   was set (they stay readable until then) and re-encrypts the e-mail
    addresses, integrations, server settings (including the cookie key),
    sign-in provider secrets, two-step verification secrets, and the scale
    readings and DEXA scans with the current key, recomputes the e-mail lookup hashes (they derive from the key) and

@@ -57,6 +57,11 @@
   requests get 503 or 429 with `Retry-After`. The budgets keep a flood on the
   public API from starving the internal one. See
   [Split deployment](15-split-deployment.md#running-more-api-processes).
+- **Messages that follow a redirect are signed.** The notice a page shows after
+  you save something comes in the address (`?msg=`) with a signature made from
+  the service secret that the web and api processes share. A link somebody made
+  up has none, and its text is not shown. After a change of the first line of
+  the service secret, a message from before it is dropped, which is harmless.
 - **Sign-in providers are fetched with care.** An OpenID discovery runs once at a
   time for an issuer, outside any lock; a failure is remembered for a minute (and
   forgotten when an administrator changes the provider); no answer of a provider

@@ -51,10 +51,15 @@ func (s *Store) Rekey(ctx context.Context, dryRun bool) (RekeyStats, error) {
 			}
 		}
 
-		// reseal returns the value sealed with the current key, or "" when it is already there.
+		// reseal returns the value sealed with the current key, or "" when it is already there. A value
+		// that was never sealed (written before a key was set) is sealed now: reading still accepts
+		// it, and this is how a database moves to all-encrypted.
 		reseal := func(kind, value, sealCtx string) (string, error) {
-			if !strings.HasPrefix(value, encPrefix) {
+			if value == "" {
 				return "", nil
+			}
+			if !strings.HasPrefix(value, encPrefix) {
+				return s.cipher.seal(value, sealCtx), nil
 			}
 			plain, e, err := s.cipher.open(value, sealCtx)
 			if err != nil {

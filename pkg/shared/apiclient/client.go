@@ -103,6 +103,7 @@ func New(base string, hc *http.Client, secret string) (*Client, error) {
 	if hc == nil {
 		hc = DefaultHTTPClient()
 	}
+	SetFlashKey(secret) // the backend signs the messages it sends in redirects with the same secret
 	return &Client{base: u, hc: hc, secret: secret}, nil
 }
 

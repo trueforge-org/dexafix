@@ -283,8 +283,11 @@ func (b *BodyStore) Rekey(ctx context.Context, dryRun bool) (BodyRekeyStats, err
 		}
 		// The context (user and row_uid) stays the same, so only the data column changes.
 		reseal := func(kind, value, sealCtx string) (string, error) {
-			if !strings.HasPrefix(value, encPrefix) {
+			if value == "" {
 				return "", nil
+			}
+			if !strings.HasPrefix(value, encPrefix) { // never sealed: sealed now (see Store.Rekey)
+				return b.cipher.seal(value, sealCtx), nil
 			}
 			plain, e, err := b.cipher.open(value, sealCtx)
 			if err != nil {
