@@ -352,6 +352,9 @@ func (s *Frontend) frontendAPIRoutes(mux *http.ServeMux) {
 	} else if s.apiUpstream != nil {
 		mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Del("Cache-Control") // the API chooses its own caching
+			if strings.Contains(r.URL.Path, "/export/") {
+				edge.ExtendWriteDeadline(w, edge.DownloadWriteTimeout)
+			}
 			s.apiUpstream.ServeHTTP(w, r)
 		})
 	} else {

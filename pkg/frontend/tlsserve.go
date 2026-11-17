@@ -10,6 +10,8 @@ import (
 
 	"github.com/quic-go/quic-go/http3"
 	"github.com/rs/zerolog/log"
+
+	"github.com/trueforge-org/dexafix/pkg/shared/edge"
 )
 
 // HTTP/2 and HTTP/3.
@@ -105,7 +107,7 @@ func (s *Frontend) startHTTPS(port string) {
 	}
 	srv := &http.Server{
 		Addr: addr, Handler: s.handler, TLSConfig: s.tlsConfig(), ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second, MaxHeaderBytes: 64 << 10,
+		ReadTimeout: 60 * time.Second, WriteTimeout: edge.WriteTimeout, IdleTimeout: 120 * time.Second, MaxHeaderBytes: 64 << 10,
 	}
 	s.https, s.httpsPort = srv, port
 	go func() {

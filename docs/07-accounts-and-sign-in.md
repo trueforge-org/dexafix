@@ -314,6 +314,6 @@ a busy server answers 503. The address is the
 visitor's: behind a reverse proxy, set **Trusted proxies** on the Admin page (see
 [Running behind a reverse proxy](03-reverse-proxy.md)), or everyone
 shares the proxy's address and its count. Limit sign-in attempts at the proxy as
-well on a public deployment. Form posts are capped at 1 MiB. Wrong second-step
+well on a public deployment. Form posts are capped at 1 MiB. Writing an answer to a visitor may take two minutes (a slow reader is cut off); an export of all your data gets fifteen. Wrong second-step
 codes are counted separately, as described in
 [Two-step verification](#two-step-verification).

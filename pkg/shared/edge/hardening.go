@@ -13,6 +13,20 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// WriteTimeout is how long an answer may take to be written to a visitor. Without one a slow reader
+// holds a connection (and, behind the frontend's request limits, a slot) for as long as it likes.
+const WriteTimeout = 2 * time.Minute
+
+// DownloadWriteTimeout is the longer time a download of all of somebody's measurements may take; the
+// handler that streams it extends its own deadline to this.
+const DownloadWriteTimeout = 15 * time.Minute
+
+// ExtendWriteDeadline gives the response a later deadline for a long download. A writer that cannot
+// change its deadline (a test recorder) keeps what it has.
+func ExtendWriteDeadline(w http.ResponseWriter, d time.Duration) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(d))
+}
+
 // maxFormBody caps the body of every non-API request. Forms are tiny; the JSON API sets its own,
 // larger limit.
 const maxFormBody = 1 << 20
@@ -103,6 +117,9 @@ type gzipWriter struct {
 	gz      *gzip.Writer
 	started bool
 }
+
+// Unwrap lets http.NewResponseController reach the connection through the wrapper (write deadlines).
+func (g *gzipWriter) Unwrap() http.ResponseWriter { return g.ResponseWriter }
 
 func (g *gzipWriter) WriteHeader(code int) {
 	if g.started {

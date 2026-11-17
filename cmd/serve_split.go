@@ -20,6 +20,7 @@ import (
 	mainbackend "github.com/trueforge-org/dexafix/pkg/backend/main"
 	"github.com/trueforge-org/dexafix/pkg/frontend"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
+	"github.com/trueforge-org/dexafix/pkg/shared/edge"
 	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/store/sqlstore"
 	"github.com/trueforge-org/dexafix/pkg/store/valkeystate"
@@ -36,7 +37,7 @@ import (
 
 func newHTTPServer(addr string, h http.Handler) *http.Server {
 	srv := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second, MaxHeaderBytes: 64 << 10}
+		ReadTimeout: 60 * time.Second, WriteTimeout: edge.WriteTimeout, IdleTimeout: 120 * time.Second, MaxHeaderBytes: 64 << 10}
 	// HTTP/1.1 and HTTP/2, including cleartext HTTP/2 (h2c) for a proxy that speaks it.
 	var protocols http.Protocols
 	protocols.SetHTTP1(true)

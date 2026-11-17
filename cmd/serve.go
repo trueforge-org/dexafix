@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trueforge-org/dexafix/pkg/app"
+	"github.com/trueforge-org/dexafix/pkg/shared/edge"
 	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/store/sqlstore"
 )
@@ -262,7 +263,7 @@ dexafix serve --db-driver postgres --dsn-file /run/secrets/dexafix_dsn`,
 		srv.ForcePasswordLogin, _ = cmd.Flags().GetBool("force-password-login")
 		handler := srv.Handler()
 		httpSrv := &http.Server{Addr: listen, Handler: handler, ReadHeaderTimeout: 10 * time.Second,
-			ReadTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second, MaxHeaderBytes: 64 << 10}
+			ReadTimeout: 60 * time.Second, WriteTimeout: edge.WriteTimeout, IdleTimeout: 120 * time.Second, MaxHeaderBytes: 64 << 10}
 		// HTTP/1.1 and HTTP/2, including cleartext HTTP/2 (h2c) for a proxy that speaks it to this
 		// server. With a certificate (Admin page) the same port also takes TLS, with HTTP/2 through
 		// ALPN, and HTTP/3 runs on the UDP port with the same number.

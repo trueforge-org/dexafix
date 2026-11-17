@@ -9,6 +9,7 @@ import (
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
+	"github.com/trueforge-org/dexafix/pkg/shared/edge"
 )
 
 // The two exports answer a data subject's right of access and portability (GDPR articles 15 and
@@ -51,6 +52,7 @@ func (s *Frontend) exportPage(kind string) func(http.ResponseWriter, *http.Reque
 				h.Set(k, v)
 			}
 		}
+		edge.ExtendWriteDeadline(w, edge.DownloadWriteTimeout) // all of somebody's data may take a slow reader a while
 		if _, err := io.Copy(w, resp.Body); err != nil {
 			log.Error().Err(err).Str("export", kind).Msg("export failed")
 		}

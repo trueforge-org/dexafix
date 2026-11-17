@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/trueforge-org/dexafix/pkg/shared/edge"
 )
 
 // A password in an environment variable must not follow a typo into the usage text, which lands in
@@ -44,4 +47,13 @@ func TestSecretFlagsStillReadTheEnvironment(t *testing.T) {
 	c.Flags().Lookup("dsn").Changed = false
 	_ = c.Flags().Set("dsn", defaultSQLiteDSN)
 	c.Flags().Lookup("dsn").Changed = false
+}
+
+// A slow reader must not hold a connection for as long as it likes: every listener has a write
+// timeout (downloads extend their own).
+func TestEveryServerHasAWriteTimeout(t *testing.T) {
+	srv := newHTTPServer("127.0.0.1:0", http.NotFoundHandler())
+	if srv.WriteTimeout != edge.WriteTimeout || srv.ReadTimeout == 0 || srv.ReadHeaderTimeout == 0 {
+		t.Fatalf("timeouts: read %v, header %v, write %v", srv.ReadTimeout, srv.ReadHeaderTimeout, srv.WriteTimeout)
+	}
 }
