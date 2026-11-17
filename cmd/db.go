@@ -16,7 +16,7 @@ const defaultSQLiteDSN = "file:dexafix.db"
 // defaults) on c. A connection string with a password is refused on the command line.
 func addDBFlags(c *cobra.Command) {
 	c.Flags().String("db-driver", envOr("DEXAFIX_DB_DRIVER", sqlstore.DriverSQLite), "database driver: sqlite or postgres")
-	c.Flags().String("dsn", envOr("DEXAFIX_DSN", defaultSQLiteDSN), "database connection string (without a password: use DEXAFIX_DSN or --dsn-file for those)")
+	c.Flags().String("dsn", defaultSQLiteDSN, "database connection string (without a password: use DEXAFIX_DSN or --dsn-file for those)")
 	c.Flags().String("dsn-file", envOr("DEXAFIX_DSN_FILE", ""), "file holding the database connection string, for strings with a password")
 	c.Flags().Bool("without-body", envOr("DEXAFIX_WITHOUT_BODY", "false") == "true", "this database does not hold the scale readings and DEXA scans because a body service of its own does (dexafix serve body); keeps the commands from creating their tables here")
 }
@@ -31,7 +31,7 @@ func dbOptions(c *cobra.Command, opts ...sqlstore.Option) []sqlstore.Option {
 
 func dbFlags(c *cobra.Command) (driver, dsn string, err error) {
 	driver, _ = c.Flags().GetString("db-driver")
-	dsn, err = dsnFlag(c, "dsn")
+	dsn, err = dsnFlag(c, "dsn", "DEXAFIX_DSN")
 	return
 }
 
@@ -180,12 +180,12 @@ dexafix db copy --from-dsn file:dexafix.db --to-driver postgres --to-dsn-file /r
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fromDriver, _ := cmd.Flags().GetString("from-driver")
-		fromDSN, err := dsnFlag(cmd, "from-dsn")
+		fromDSN, err := dsnFlag(cmd, "from-dsn", "DEXAFIX_FROM_DSN", "DEXAFIX_DSN")
 		if err != nil {
 			return err
 		}
 		toDriver, _ := cmd.Flags().GetString("to-driver")
-		toDSN, err := dsnFlag(cmd, "to-dsn")
+		toDSN, err := dsnFlag(cmd, "to-dsn", "DEXAFIX_TO_DSN")
 		if err != nil {
 			return err
 		}
@@ -329,7 +329,7 @@ Compose example runs it once at every start as the db-setup container. PostgreSQ
   --app-password-file /secrets/db_password --body-password-file /secrets/body_db_password`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		adminDSN, err := dsnFlag(cmd, "admin-dsn")
+		adminDSN, err := dsnFlag(cmd, "admin-dsn", "DEXAFIX_ADMIN_DSN")
 		if err != nil {
 			return err
 		}
@@ -360,7 +360,7 @@ Compose example runs it once at every start as the db-setup container. PostgreSQ
 }
 
 func init() {
-	dbProvisionCmd.Flags().String("admin-dsn", envOr("DEXAFIX_ADMIN_DSN", ""), "PostgreSQL superuser connection string (without a password: use DEXAFIX_ADMIN_DSN or --admin-dsn-file for those)")
+	dbProvisionCmd.Flags().String("admin-dsn", "", "PostgreSQL superuser connection string (without a password: use DEXAFIX_ADMIN_DSN or --admin-dsn-file for those)")
 	dbProvisionCmd.Flags().String("admin-dsn-file", envOr("DEXAFIX_ADMIN_DSN_FILE", ""), "file holding the administrator's connection string")
 	dbProvisionCmd.Flags().String("app-password-file", envOr("DEXAFIX_APP_PASSWORD_FILE", ""), "file holding the password of the api's role (dexafix)")
 	dbProvisionCmd.Flags().String("body-password-file", envOr("DEXAFIX_BODY_PASSWORD_FILE", ""), "file holding the password of the body service's role (dexafix_body)")
@@ -371,10 +371,10 @@ func init() {
 	dbRekeyCmd.Flags().Bool("body", false, "rotate the key of the body service's own database (scale readings and DEXA scans); --dsn and the key flags are then that service's")
 	dbCopyCmd.Flags().String("from-driver", sqlstore.DriverSQLite, "source database driver: sqlite or postgres")
 	dbMigrateCmd.Flags().Bool("yes", false, "confirm rolling the schema back, which drops tables and their data")
-	dbCopyCmd.Flags().String("from-dsn", envOr("DEXAFIX_FROM_DSN", envOr("DEXAFIX_DSN", "")), "source connection string (without a password: use DEXAFIX_FROM_DSN or --from-dsn-file for those)")
+	dbCopyCmd.Flags().String("from-dsn", "", "source connection string (without a password: use DEXAFIX_FROM_DSN or --from-dsn-file for those)")
 	dbCopyCmd.Flags().String("from-dsn-file", envOr("DEXAFIX_FROM_DSN_FILE", ""), "file holding the source connection string")
 	dbCopyCmd.Flags().String("to-driver", envOr("DEXAFIX_TO_DRIVER", ""), "target database driver: sqlite or postgres")
-	dbCopyCmd.Flags().String("to-dsn", envOr("DEXAFIX_TO_DSN", ""), "target connection string (without a password: use DEXAFIX_TO_DSN or --to-dsn-file for those)")
+	dbCopyCmd.Flags().String("to-dsn", "", "target connection string (without a password: use DEXAFIX_TO_DSN or --to-dsn-file for those)")
 	dbCopyCmd.Flags().String("to-dsn-file", envOr("DEXAFIX_TO_DSN_FILE", ""), "file holding the target connection string")
 	dbCmd.AddCommand(dbMigrateCmd, dbCopyCmd, dbRekeyCmd, dbProvisionCmd)
 	RootCmd.AddCommand(dbCmd)

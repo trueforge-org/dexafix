@@ -264,7 +264,7 @@ API and another the internal one on the same database.`,
 			bodySvc.SetVersion(Version)
 			backendOpts = []mainbackend.Option{mainbackend.WithBody(inProcess)}
 		}
-		valkeyURL, err := secretFlag(cmd, "valkey-url", "valkey-url-file", dsnHasPassword)
+		valkeyURL, err := secretFlag(cmd, "valkey-url", "valkey-url-file", dsnHasPassword, "DEXAFIX_VALKEY_URL")
 		if err != nil {
 			return err
 		}
@@ -350,7 +350,7 @@ func init() {
 
 	serveAPICmd.Flags().String("listen", envOr("DEXAFIX_LISTEN", ":8080"), "address of the public API (empty: off)")
 	addHealthFlag(serveAPICmd)
-	serveAPICmd.Flags().String("valkey-url", envOr("DEXAFIX_VALKEY_URL", ""), "keep the failed sign-in counters, single-use values and sessions in Valkey (redis://host:6379/0, rediss:// for TLS) instead of the database; a password goes in --valkey-url-file, not here")
+	serveAPICmd.Flags().String("valkey-url", "", "keep the failed sign-in counters, single-use values and sessions in Valkey (redis://host:6379/0, rediss:// for TLS) instead of the database; a password goes in --valkey-url-file, not here")
 	serveAPICmd.Flags().String("valkey-url-file", envOr("DEXAFIX_VALKEY_URL_FILE", ""), "file with the Valkey URL, which may hold the password: redis://:password@host:6379/0")
 	serveAPICmd.Flags().String("internal-listen", envOr("DEXAFIX_INTERNAL_LISTEN", ":8081"), "address of the internal API for the web frontend (empty: off); keep it on a private network")
 	serveAPICmd.Flags().Bool("maintenance", envOr("DEXAFIX_MAINTENANCE", "true") != "false", "run the maintenance loop (audit log purge, self-signed certificate renewal); turn it off on all but one api process")

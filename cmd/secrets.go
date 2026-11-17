@@ -52,22 +52,32 @@ func dsnHasPassword(dsn string) bool {
 	return false
 }
 
-// secretFlag resolves a value that may hold a secret. Order: the file named by fileFlag, then the
-// flag itself. The flag's default already comes from the environment, so a value that was typed on
-// the command line (Changed) is the only one that is refused when it contains a password.
-func secretFlag(cmd *cobra.Command, flag, fileFlag string, hasSecret func(string) bool) (string, error) {
+// secretFlag resolves a value that may hold a secret. Order: the file named by fileFlag, the flag
+// when it was typed (refused when it contains a password), the first non-empty environment
+// variable of envs, then the flag's own default. The flag is registered with a plain default and
+// the environment is read here, because cobra prints a flag's default in the usage text, which
+// follows a typo into container and CI logs.
+func secretFlag(cmd *cobra.Command, flag, fileFlag string, hasSecret func(string) bool, envs ...string) (string, error) {
 	if path, _ := cmd.Flags().GetString(fileFlag); path != "" {
 		return readSecretFile(path)
 	}
 	v, _ := cmd.Flags().GetString(flag)
-	if cmd.Flags().Changed(flag) && hasSecret(v) {
-		return "", fmt.Errorf("--%s contains a password, which would be visible to other users of this machine: "+
-			"put it in an environment variable or in a file and use --%s", flag, fileFlag)
+	if cmd.Flags().Changed(flag) {
+		if hasSecret(v) {
+			return "", fmt.Errorf("--%s contains a password, which would be visible to other users of this machine: "+
+				"put it in an environment variable or in a file and use --%s", flag, fileFlag)
+		}
+		return v, nil
+	}
+	for _, name := range envs {
+		if e := os.Getenv(name); e != "" {
+			return e, nil
+		}
 	}
 	return v, nil
 }
 
 // dsnFlag resolves a database connection string.
-func dsnFlag(cmd *cobra.Command, flag string) (string, error) {
-	return secretFlag(cmd, flag, flag+"-file", dsnHasPassword)
+func dsnFlag(cmd *cobra.Command, flag string, envs ...string) (string, error) {
+	return secretFlag(cmd, flag, flag+"-file", dsnHasPassword, envs...)
 }
