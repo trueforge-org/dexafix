@@ -108,8 +108,10 @@ func TestServeAPIStopsWithAnErrorWhenItCannotStart(t *testing.T) {
 			[]string{"--service-secret-file", service, "--worker-secret-file", "withings=" + missing}, "worker secret"},
 		"the same secret for the service and the workers": {
 			[]string{"--service-secret-file", service, "--worker-secret-file", "withings=" + service}, "service"},
-		"a worker secret without its providers": {
-			[]string{"--service-secret-file", service, "--worker-secret-file", service}, "PROVIDERS=FILE"},
+		"a legacy worker secret that is the service secret": {
+			[]string{"--service-secret-file", service, "--worker-secret-file", service}, "service"},
+		"an entry with no file": {
+			[]string{"--service-secret-file", service, "--worker-secret-file", "withings="}, "PROVIDERS=FILE"},
 		"a worker secret for a provider nobody knows": {
 			[]string{"--service-secret-file", service, "--worker-secret-file", "nosuch=" + service}, "nosuch"},
 		"one worker secret for two providers' entries": {

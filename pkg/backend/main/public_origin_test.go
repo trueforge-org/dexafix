@@ -52,7 +52,7 @@ func TestThePublicListenerRefusesRequestsFromOtherOrigins(t *testing.T) {
 		"JSON from another origin":                             {"application/json", evil, http.StatusForbidden},
 		"a form from another site":                             {"application/x-www-form-urlencoded", map[string]string{"Sec-Fetch-Site": "cross-site"}, http.StatusForbidden},
 		"text/plain from a script (no Origin)":                 {"text/plain", nil, http.StatusUnsupportedMediaType},
-		"no content type at all":                               {"", nil, http.StatusUnsupportedMediaType},
+		"a form body from a script":                            {"application/x-www-form-urlencoded", nil, http.StatusUnsupportedMediaType},
 		"a bad content type":                                   {"application/json; charset", nil, http.StatusUnsupportedMediaType},
 	} {
 		if rec := post(tc.contentType, tc.hdr); rec.Code != tc.want {
@@ -122,5 +122,21 @@ func TestTheBaseURLIsATrustedOriginOfThePublicListener(t *testing.T) {
 	g.b.swapSettings(&l2)
 	if code := put(); code != http.StatusForbidden {
 		t.Fatalf("the old base URL is still trusted: %d", code)
+	}
+}
+
+// Older scripts sent a JSON body with no Content-Type at all; a browser always names one, so that is
+// still read (the cross-origin check refuses a browser of another origin before this).
+func TestABodyWithoutAContentTypeIsStillRead(t *testing.T) {
+	g := newRig(t)
+	uid, session := g.signUp("alice")
+	req := httptest.NewRequest("POST", fmt.Sprintf("/api/v1/users/%d/scale-readings", uid), strings.NewReader(`[{"measured_at":"2026-03-01T08:00:00Z","weight_kg":80}]`))
+	req.RemoteAddr = "192.0.2.50:1234"
+	req.AddCookie(session)
+	req.Header.Del("Content-Type")
+	rec := httptest.NewRecorder()
+	g.b.PublicHandler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("%d %s", rec.Code, rec.Body)
 	}
 }

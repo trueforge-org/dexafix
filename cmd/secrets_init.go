@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
 	"github.com/spf13/cobra"
 
 	"github.com/trueforge-org/dexafix/pkg/shared/bodyapi"
@@ -70,6 +71,10 @@ type initOptions struct {
 	// workerDirs holds one directory per provider's workers, so that the workers of one provider
 	// can read the secret of that provider only. A provider without a directory is skipped.
 	workerDirs map[string]string
+	// legacyWorkerDir is a plain --worker-dir (before the directories were per provider): one
+	// directory for all workers, with the single worker_secret that opens every provider (the api
+	// process reads it as a legacy --worker-secret-file).
+	legacyWorkerDir string
 	// The containers that are not DexaFix get a directory of their own too, with only what each needs:
 	// the database (its superuser's password), the one-shot db-setup (the administrator's connection
 	// string and the two role passwords) and Valkey (its password).
@@ -248,11 +253,11 @@ func (o initOptions) makeAll() error {
 	if o.hostDir == "" {
 		return errors.New("--host-dir is required: the directory for the passwords and keys you must back up")
 	}
-	others := o.webDir != "" || len(o.workerDirs) > 0 || o.bodyDir != ""
+	others := o.webDir != "" || len(o.workerDirs) > 0 || o.legacyWorkerDir != "" || o.bodyDir != ""
 	if others && o.apiDir == "" {
 		return errors.New("--api-dir is required with the other process directories: it holds the secrets they share")
 	}
-	for _, d := range append([]string{o.hostDir, o.apiDir, o.webDir, o.bodyDir, o.dbDir, o.dbsetupDir, o.valkeyDir}, o.workerDirList()...) {
+	for _, d := range append([]string{o.hostDir, o.apiDir, o.webDir, o.bodyDir, o.dbDir, o.dbsetupDir, o.valkeyDir, o.legacyWorkerDir}, o.workerDirList()...) {
 		if d == "" {
 			continue
 		}
@@ -365,8 +370,19 @@ func (o initOptions) makeAll() error {
 	if err := o.put(o.apiDir, fileValkeyURL, fmt.Sprintf("redis://:%s@%s:6379/0", o.hostValue("valkey_password"), o.valkeyHost)); err != nil {
 		return err
 	}
+	legacy := ""
+	if o.legacyWorkerDir != "" {
+		if legacy, err = o.keep(o.apiDir, fileWorkerSecret, false, randomHex); err != nil {
+			return err
+		}
+	}
 	distinct := map[string]bool{service: true, bodySecret: true}
-	if len(distinct) != 2 {
+	want := 2
+	if legacy != "" {
+		distinct[legacy] = true
+		want = 3
+	}
+	if len(distinct) != want {
 		return errors.New("the service, worker and body secrets must all differ: they open different doors; delete the duplicates and run init again")
 	}
 	for _, w := range workers {
@@ -378,6 +394,9 @@ func (o initOptions) makeAll() error {
 	copies := []struct{ dir, name, value string }{
 		{o.webDir, fileServiceSecret, service},
 		{o.bodyDir, fileBodySecret, bodySecret},
+	}
+	if o.legacyWorkerDir != "" {
+		copies = append(copies, struct{ dir, name, value string }{o.legacyWorkerDir, fileWorkerSecret, legacy})
 	}
 	for name, dir := range o.workerDirs {
 		copies = append(copies, struct{ dir, name, value string }{dir, fileWorkerSecret, workers[name]})
@@ -419,6 +438,7 @@ func (o initOptions) makeAll() error {
 	for _, d := range o.workerDirList() {
 		clientFiles(d, web.Roles[mtls.RoleWorker])
 	}
+	clientFiles(o.legacyWorkerDir, web.Roles[mtls.RoleWorker])
 	if o.bodyDir != "" {
 		// The link to the body service has a CA of its own: a certificate of one link opens nothing
 		// of the other.
@@ -471,7 +491,9 @@ mutual TLS certificates.
   --worker-dir   PROVIDER=DIR, once for each provider (withings=..., strengthlevel=...): worker_secret
                  (that provider's own; the api directory holds worker_secret_<provider> for each) and
                  the same client certificate. Give each provider's workers a directory of their own, so
-                 a compromised worker cannot read the secret of another provider
+                 a compromised worker cannot read the secret of another provider. A plain
+                 --worker-dir DIR (the older form) still works: one directory and one
+                 worker_secret that opens every provider
   --body-dir     body_secret, body_token_pub (the public half: it can check tokens, not make them)
                  and the body service's certificate
   --db-dir       db_admin_password, for the database container
@@ -508,6 +530,15 @@ dexafix secrets init --host-dir ./secrets/host --api-dir ./secrets/api --web-dir
 		var err error
 		if o.workerDirs, err = parseWorkerDirs(dirs); err != nil {
 			return err
+		}
+		for _, e := range dirs {
+			if !strings.Contains(e, "=") && e != "" {
+				if o.legacyWorkerDir != "" {
+					return errors.New("--worker-dir names a plain directory twice")
+				}
+				o.legacyWorkerDir = e
+				log.Warn().Str("dir", e).Msg("--worker-dir without PROVIDER= makes one worker secret for every provider; use --worker-dir withings=DIR --worker-dir strengthlevel=DIR")
+			}
 		}
 		o.bodyDir, _ = f.GetString("body-dir")
 		o.dbDir, _ = f.GetString("db-dir")
@@ -558,6 +589,9 @@ func parseWorkerDirs(entries []string) (map[string]string, error) {
 	out := map[string]string{}
 	for _, e := range entries {
 		name, dir, ok := strings.Cut(e, "=")
+		if !ok && e != "" && !strings.Contains(e, "=") {
+			continue // a plain directory: the legacy form, handled by the caller
+		}
 		if !ok || dir == "" || !known[name] {
 			return nil, fmt.Errorf("--worker-dir %q: write PROVIDER=DIR with a provider of %s, such as withings=/secrets/worker-withings", e, strings.Join(builtin.Names(), ", "))
 		}

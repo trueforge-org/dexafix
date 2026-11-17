@@ -157,8 +157,6 @@ func TestProvisionRefusesBadInput(t *testing.T) { // needs no server
 		"no dsn":         {AppPassword: "app-password-0123456789", BodyPassword: "body-password-0123456789"},
 		"no password":    {AdminDSN: "postgres://x@h/postgres", AppPassword: "app-password-0123456789"},
 		"same passwords": {AdminDSN: "postgres://x@h/postgres", AppPassword: "same-password-0123456789", BodyPassword: "same-password-0123456789"},
-		"a short one":    {AdminDSN: "postgres://x@h/postgres", AppPassword: "short", BodyPassword: "body-password-0123456789"},
-		"a short other":  {AdminDSN: "postgres://x@h/postgres", AppPassword: "app-password-0123456789", BodyPassword: "short"},
 	} {
 		if err := Provision(ctx, o); err == nil {
 			t.Errorf("%s: want an error", name)

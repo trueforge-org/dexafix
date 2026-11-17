@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/rs/zerolog/log"
 )
 
 // The names Provision creates. They are fixed: the connection strings that deploy init writes and the
@@ -25,7 +26,7 @@ const (
 	ProvisionBodySchema = "body"
 )
 
-// minProvisionPassword is the shortest password Provision accepts for a role. `secrets init` makes 64
+// minProvisionPassword is the shortest password Provision recommends for a role (a shorter one is accepted, with a warning). `secrets init` makes 64
 // hexadecimal characters.
 const minProvisionPassword = 16
 
@@ -61,7 +62,8 @@ func Provision(ctx context.Context, o ProvisionOptions) error {
 		return errors.New("provision: an admin connection string and both passwords are required")
 	}
 	if len(o.AppPassword) < minProvisionPassword || len(o.BodyPassword) < minProvisionPassword {
-		return fmt.Errorf("provision: the role passwords must have at least %d characters (`dexafix secrets init` makes long ones)", minProvisionPassword)
+		// Not refused: a deployment that was set up with shorter ones must keep starting. It is said.
+		log.Warn().Int("minimum", minProvisionPassword).Msg("provision: a role password is shorter than recommended; `dexafix secrets init` makes long ones")
 	}
 	if o.AppPassword == o.BodyPassword {
 		return errors.New("provision: the two roles must have different passwords")

@@ -75,9 +75,10 @@
   and turning one on does not open the other. A server on the same machine
   (`localhost`) is always allowed. A failed connection is reported to
   the administrator without what the other end answered; the details are in the
-  server log. The api process takes no
-  proxy from `HTTPS_PROXY` and the like for these connections, because the check
-  would then apply to the proxy, not to the address behind it. Everything else
+  server log. The api process uses
+  the proxy from `HTTPS_PROXY` and the like for these connections only when private
+  network addresses are allowed for providers, because the check applies to the
+  proxy, not to the address behind it. Everything else
   that talks to the outside is a [worker](16-workers.md). Workers refuse private,
   link-local and metadata addresses too, follow at most ten redirects and never
   one from `https` to `http`; behind a proxy (`HTTPS_PROXY`) they may dial the

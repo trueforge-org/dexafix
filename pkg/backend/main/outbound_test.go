@@ -213,7 +213,18 @@ func TestTheProviderClientTakesNoProxyFromTheEnvironment(t *testing.T) {
 	t.Setenv("HTTP_PROXY", "http://proxy.internal:3128")
 	g := newRig(t)
 	tr, ok := g.b.newProviderClient().Transport.(*http.Transport)
-	if !ok || tr.Proxy != nil {
-		t.Fatalf("transport %T, proxy set: %v", tr, tr != nil && tr.Proxy != nil)
+	if !ok || tr.Proxy == nil {
+		t.Fatalf("transport %T", tr)
+	}
+	req, _ := http.NewRequest("GET", "https://idp.example.com/", nil)
+	if u, err := tr.Proxy(req); err != nil || u != nil {
+		t.Fatalf("a proxy was used although private addresses are not allowed: %v %v", u, err)
+	}
+	// With private addresses allowed (an administrator's choice) the environment's proxy is back.
+	l := *g.b.cfg()
+	l.allowPrivateProviders = true
+	g.b.swapSettings(&l)
+	if u, err := g.b.newProviderClient().Transport.(*http.Transport).Proxy(req); err != nil || u == nil {
+		t.Fatalf("the proxy of the environment is not used once private addresses are allowed: %v %v", u, err)
 	}
 }

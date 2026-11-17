@@ -5,7 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/trueforge-org/dexafix/pkg/shared/edge"
+	"github.com/trueforge-org/dexafix/pkg/workers/builtin"
 )
 
 // A password in an environment variable must not follow a typo into the usage text, which lands in
@@ -55,5 +58,30 @@ func TestEveryServerHasAWriteTimeout(t *testing.T) {
 	srv := newHTTPServer("127.0.0.1:0", http.NotFoundHandler())
 	if srv.WriteTimeout != edge.WriteTimeout || srv.ReadTimeout == 0 || srv.ReadHeaderTimeout == 0 {
 		t.Fatalf("timeouts: read %v, header %v, write %v", srv.ReadTimeout, srv.ReadHeaderTimeout, srv.WriteTimeout)
+	}
+}
+
+// Before secrets were per provider the flag was a plain path (and the variable had another name). Both
+// still work, so an upgrade does not stop the workers; the secret then opens every provider, which is
+// said in the log.
+func TestALegacyWorkerSecretFileStillWorksAndIsWarnedAbout(t *testing.T) {
+	logs := captureLog(t)
+	path := writeSecretFile(t, strings.Repeat("w", 40)+"\n")
+	groups, all, err := loadWorkerSecretGroups([]string{path})
+	if err != nil || len(groups) != 1 || len(all) != 1 {
+		t.Fatalf("%+v %v %v", groups, all, err)
+	}
+	if len(groups[0].Providers) != len(builtin.Names()) {
+		t.Errorf("the legacy secret opens %v, want every provider", groups[0].Providers)
+	}
+	if !strings.Contains(logs.String(), "opens every provider") {
+		t.Errorf("no warning: %s", logs)
+	}
+	t.Setenv("DEXAFIX_WORKER_SECRET_FILES", "")
+	t.Setenv("DEXAFIX_WORKER_SECRET_FILE", path)
+	c := &cobra.Command{}
+	addWorkerSecretFilesFlag(c)
+	if got, _ := c.Flags().GetStringSlice("worker-secret-file"); len(got) != 1 || got[0] != path {
+		t.Errorf("the old variable gives %v", got)
 	}
 }

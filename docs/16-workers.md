@@ -58,8 +58,12 @@ your time zone, give or take a day) and none from before 1900 or after tomorrow;
 the connection keeps the token fields only. Anything else fails the job.
 
 **Upgrading from a single worker secret:** `--worker-secret-file` of `serve api`
-now takes `PROVIDERS=FILE` entries, and `DEXAFIX_WORKER_SECRET_FILE` of the api
-process is replaced by `DEXAFIX_WORKER_SECRET_FILES` (entries separated by `;`).
+now takes `PROVIDERS=FILE` entries, and `DEXAFIX_WORKER_SECRET_FILES` (entries
+separated by `;`) is the variable. The old form still works, so an upgrade does not
+stop your workers: a plain path (or `DEXAFIX_WORKER_SECRET_FILE`) is read as one
+secret that opens every provider, and the api process logs a warning. Move to one
+file per provider when you can: that is what keeps one compromised worker from
+leasing another provider's jobs.
 In the Compose deployment, run `docker compose pull && docker compose up -d`:
 `init` makes `worker_secret_withings` and `worker_secret_strengthlevel`, and each
 worker container gets its own secrets volume. The old `worker_secret` file and the

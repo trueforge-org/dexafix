@@ -35,8 +35,8 @@ the API. Such an administrator uses an access token (403 otherwise).
 | GET    | `/users/{id}/estimates`         | Daily estimates and calibrations.                                                                                                                       |
 | POST   | `/users/{id}/import/{provider}` | Import from a provider. Optional `since` and `day` query parameters.                                                                                    |
 
-Requests with a body must say `Content-Type: application/json`; anything else is a
-415. A request that a browser marks as coming from another origin (it sends `Origin`
+Requests with a body must say `Content-Type: application/json`; another type is a
+415 (a request with no `Content-Type` at all is still read, as before). A request that a browser marks as coming from another origin (it sends `Origin`
 or `Sec-Fetch-Site`) is refused with a 403 unless it comes from the base URL set on
 the Admin page, so a web page of another site cannot act as the signed-in user.
 Scripts and tools send neither header and are not affected.

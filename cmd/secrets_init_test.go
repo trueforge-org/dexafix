@@ -328,7 +328,7 @@ func TestSecretsInitRefusesBadInput(t *testing.T) {
 	if err := o.run(); err == nil || !strings.Contains(err.Error(), "differ") {
 		t.Errorf("service and body secrets that are equal must be refused, got %v", err)
 	}
-	for _, bad := range [][]string{{"withings"}, {"withings="}, {"nosuch=/x"}, {"withings=/a", "withings=/b"}} {
+	for _, bad := range [][]string{{"withings="}, {"nosuch=/x"}, {"withings=/a", "withings=/b"}} {
 		if _, err := parseWorkerDirs(bad); err == nil {
 			t.Errorf("--worker-dir %v must be refused", bad)
 		}
@@ -477,5 +477,42 @@ func TestSecretsInitAsTheOwnerNeedsNoRights(t *testing.T) {
 	}
 	if got := readFile(t, dirs["host"], "encryption_key"); got == "" {
 		t.Error("no encryption key")
+	}
+}
+
+// A plain --worker-dir is the older form: one directory for all workers, with one secret that opens
+// every provider. It still works (the api process reads that secret as a legacy file).
+func TestSecretsInitStillTakesAPlainWorkerDir(t *testing.T) {
+	o, d := testInit(t)
+	o.workerDirs = nil
+	o.legacyWorkerDir = d["worker"]
+	if err := o.run(); err != nil {
+		t.Fatal(err)
+	}
+	api, worker := readFile(t, d["api"], fileWorkerSecret), readFile(t, d["worker"], fileWorkerSecret)
+	if api == "" || api != worker {
+		t.Fatalf("api %q, worker %q", api, worker)
+	}
+	for _, other := range []string{fileServiceSecret, fileBodySecret, fileWorkerSecret + "_withings"} {
+		if got, _ := existing(d["api"], other); got == api {
+			t.Errorf("the legacy secret equals %s", other)
+		}
+	}
+	for _, name := range []string{fileMTLSCA, fileMTLSCert, fileMTLSKey} {
+		if readFile(t, d["worker"], name) == "" {
+			t.Errorf("no %s in the worker directory", name)
+		}
+	}
+	// And through the command line.
+	root := t.TempDir()
+	dir := func(n string) string { return filepath.Join(root, n) }
+	if _, _, err := run(t, "secrets", "init", "--host-dir", dir("host"), "--api-dir", dir("api"), "--worker-dir", dir("w")); err != nil {
+		t.Fatal(err)
+	}
+	if readFile(t, dir("w"), fileWorkerSecret) != readFile(t, dir("api"), fileWorkerSecret) {
+		t.Error("the plain directory did not get the secret")
+	}
+	if _, _, err := run(t, "secrets", "init", "--host-dir", dir("host"), "--api-dir", dir("api"), "--worker-dir", dir("w"), "--worker-dir", dir("w2")); err == nil {
+		t.Error("two plain directories were accepted")
 	}
 }

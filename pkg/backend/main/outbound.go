@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -36,9 +37,16 @@ const (
 // the address an administrator typed.
 func (s *Backend) newProviderClient() *http.Client {
 	t := http.DefaultTransport.(*http.Transport).Clone()
-	// No proxy from the environment: the guard below checks the address that is dialled, which behind
-	// a proxy is the proxy's, so a provider address typed by an administrator would not be checked at all.
-	t.Proxy = nil
+	// The guard below checks the address that is dialled, which behind a proxy is the proxy's, so a
+	// provider address typed by an administrator would not be checked at all. The environment's proxy
+	// is therefore used only when the administrator has allowed private network addresses for
+	// providers (a proxy is one), as before; otherwise there is none.
+	t.Proxy = func(r *http.Request) (*url.URL, error) {
+		if s.allowPrivateProviders() {
+			return http.ProxyFromEnvironment(r)
+		}
+		return nil, nil
+	}
 	t.DialContext = (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second, Control: netguard.Control(s.allowPrivateProviders)}).DialContext
 	return &http.Client{Timeout: providerTimeout, Transport: t, CheckRedirect: checkProviderRedirect}
 }

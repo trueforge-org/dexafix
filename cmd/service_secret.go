@@ -121,6 +121,8 @@ func addWorkerSecretFilesFlag(c *cobra.Command) {
 	var def []string
 	if v := os.Getenv("DEXAFIX_WORKER_SECRET_FILES"); v != "" {
 		def = strings.Split(v, ";")
+	} else if v := os.Getenv("DEXAFIX_WORKER_SECRET_FILE"); v != "" {
+		def = []string{v} // the name before secrets were per provider: still read, as a legacy file
 	}
 	c.Flags().StringSlice("worker-secret-file", def,
 		"PROVIDERS=FILE: the file with the secret of the workers of those providers, one per line (the first is the one they send); "+
@@ -140,6 +142,14 @@ func loadWorkerSecretGroups(entries []string) ([]mainbackend.WorkerSecrets, []st
 	seen := map[string]bool{}
 	for _, e := range entries {
 		names, path, ok := strings.Cut(e, "=")
+		if !ok && e != "" && !strings.ContainsAny(e, "=+") {
+			// Before secrets were per provider the flag was a plain path, and the secret in it opened
+			// every provider. That still works, so an upgrade does not stop the workers, but it is the
+			// configuration the per-provider secrets exist to replace.
+			log.Warn().Str("file", e).Msg("--worker-secret-file without PROVIDERS= opens every provider's jobs to one secret: " +
+				"give each provider its own file (withings=FILE --worker-secret-file strengthlevel=FILE), see docs/16-workers.md")
+			names, path, ok = strings.Join(builtin.Names(), "+"), e, true
+		}
 		if !ok || names == "" || path == "" {
 			return nil, nil, fmt.Errorf("--worker-secret-file %q: write PROVIDERS=FILE, such as withings=/run/secrets/worker_withings (a worker secret opens only the providers named)", e)
 		}

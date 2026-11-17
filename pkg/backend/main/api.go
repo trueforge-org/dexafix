@@ -67,8 +67,16 @@ func badRequest(w http.ResponseWriter, msg string) {
 // page can send to another origin without a preflight, so the API only reads what a page cannot:
 // together with the cross-origin check this closes the door on a page of another site acting as the
 // signed-in user.
+//
+// A request with no Content-Type at all is let through: a browser always names one for a form or a
+// text post, so such a request is a script (older ones sent bodies that way), and the cross-origin
+// check has already refused a browser of another origin.
 func isJSON(r *http.Request) bool {
-	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	h := r.Header.Get("Content-Type")
+	if h == "" {
+		return true
+	}
+	mt, _, err := mime.ParseMediaType(h)
 	return err == nil && mt == "application/json"
 }
 
