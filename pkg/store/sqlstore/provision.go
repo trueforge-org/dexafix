@@ -14,6 +14,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/rs/zerolog/log"
+
+	"github.com/trueforge-org/dexafix/pkg/shared/must"
 )
 
 // The names Provision creates. They are fixed: the connection strings that deploy init writes and the
@@ -244,13 +246,9 @@ func scramVerifier(password string) (string, error) {
 		}
 	}
 	salt := make([]byte, 16)
-	if _, err := rand.Read(salt); err != nil {
-		return "", fmt.Errorf("provision: make a salt: %w", err)
-	}
-	salted, err := pbkdf2.Key(sha256.New, password, salt, scramIterations, sha256.Size)
-	if err != nil {
-		return "", fmt.Errorf("provision: derive the key: %w", err)
-	}
+	_, _ = rand.Read(salt) // never fails: since Go 1.24 a broken random source ends the program
+	// Cannot fail: the length asked for is one SHA-256 block's worth, and the iterations are positive.
+	salted := must.Value(pbkdf2.Key(sha256.New, password, salt, scramIterations, sha256.Size))
 	mac := func(key []byte, msg string) []byte {
 		h := hmac.New(sha256.New, key)
 		h.Write([]byte(msg))
