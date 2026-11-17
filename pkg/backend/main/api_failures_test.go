@@ -18,6 +18,9 @@ func (r *jobRig) callAs(token, method, path, payload string) (int, string) {
 		r.t.Fatal(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
+	if payload != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		r.t.Fatal(err)

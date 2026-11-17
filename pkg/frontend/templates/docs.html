@@ -924,6 +924,7 @@ dexafix serve --db-driver postgres --dsn-file /run/secrets/dexafix-dsn</code></p
     <tr><td>GET</td><td><code>/audit</code></td><td>The whole audit log. Administrators only.</td></tr>
   </tbody>
 </table></div>
+<p>Requests with a body must say <code>Content-Type: application/json</code>; anything else is a 415. A request that a browser marks as coming from another origin (it sends <code>Origin</code> or <code>Sec-Fetch-Site</code>) is refused with a 403 unless it comes from the base URL set on the Admin page, so a web page of another site cannot act as the signed-in user. Scripts and tools send neither header and are not affected.</p>
 <p>Scans and readings cannot be deleted through the API, and access tokens cannot be created or revoked through it. Use the website for those. Changing a password revokes all the user's access tokens, and so does an administrator setting it or a password reset.</p>
 <p>Also: <code>GET /healthz</code> returns <code>ok</code> without authentication.</p>
 <h3 id="api-pagination">Pagination and filters</h3>

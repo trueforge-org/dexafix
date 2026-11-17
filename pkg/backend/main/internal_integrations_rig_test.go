@@ -120,6 +120,9 @@ func (r *jobRig) call(method, path, payload string) (int, string, http.Header) {
 		r.t.Fatal(err)
 	}
 	req.Header.Set("Authorization", "Bearer "+r.token)
+	if payload != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		r.t.Fatal(err)

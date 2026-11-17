@@ -41,6 +41,9 @@ func newAuthServer(t *testing.T) (*httptest.Server, *http.Client, *sqlstore.Stor
 func apiCall(t *testing.T, c *http.Client, method, u, payload string, hdr http.Header) (int, string) {
 	t.Helper()
 	req, _ := http.NewRequest(method, u, strings.NewReader(payload))
+	if payload != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	for k, v := range hdr {
 		req.Header[k] = v
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"strconv"
 	"time"
@@ -61,7 +62,20 @@ func badRequest(w http.ResponseWriter, msg string) {
 	writeJSON(w, http.StatusBadRequest, map[string]string{"error": msg})
 }
 
+// isJSON reports whether the request says its body is JSON. A form or text/plain body is what a web
+// page can send to another origin without a preflight, so the API only reads what a page cannot:
+// together with the cross-origin check this closes the door on a page of another site acting as the
+// signed-in user.
+func isJSON(r *http.Request) bool {
+	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	return err == nil && mt == "application/json"
+}
+
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	if !isJSON(r) {
+		writeJSON(w, http.StatusUnsupportedMediaType, map[string]string{"error": "send the body as application/json (Content-Type: application/json)"})
+		return false
+	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBodyBytes))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {

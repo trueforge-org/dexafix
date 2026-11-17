@@ -23,6 +23,7 @@ import (
 
 	"github.com/trueforge-org/dexafix/pkg/shared/edge"
 	"github.com/trueforge-org/dexafix/pkg/shared/jobs"
+	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/store"
 )
 
@@ -78,6 +79,7 @@ type Backend struct {
 	onSettings func()                       // called after the settings in force change
 
 	authChain      []authStep
+	cop            atomic.Pointer[copEntry] // same-origin check of the public listener
 	cookieKey      []byte
 	httpClient     *http.Client
 	serviceSecrets [][32]byte    // accepted by the internal API, see internal.go
@@ -220,7 +222,42 @@ func (s *Backend) PublicHandler() http.Handler {
 		Rate: publicRate, Burst: publicBurst,
 		Skip: func(r *http.Request) bool { return r.URL.Path == "/healthz" },
 	}
-	return edge.LogRequests(s.proxyHeaders(edge.SecureHeaders(edge.Compress(budget.Middleware(s.withAuth(apiOnly))))))
+	return edge.LogRequests(s.proxyHeaders(edge.SecureHeaders(edge.Compress(budget.Middleware(s.crossOriginGuard(s.withAuth(apiOnly)))))))
+}
+
+// copEntry is the same-origin check for one base URL.
+type copEntry struct {
+	base *url.URL
+	cop  *http.CrossOriginProtection
+}
+
+// crossOrigin returns the same-origin check for the public listener. The configured base URL is a
+// trusted origin too; the check is built again when an administrator changes it.
+func (s *Backend) crossOrigin() *http.CrossOriginProtection {
+	base := s.cfg().baseURL
+	if e := s.cop.Load(); e != nil && e.base == base {
+		return e.cop
+	}
+	cop := http.NewCrossOriginProtection()
+	if base != nil {
+		must.Do(cop.AddTrustedOrigin(base.Scheme + "://" + base.Host)) // the base URL was checked when it was set
+	}
+	s.cop.Store(&copEntry{base: base, cop: cop})
+	return cop
+}
+
+// crossOriginGuard refuses a request that a browser says came from another origin (the cookie of a
+// signed-in user would otherwise act for a page of another site, or of a sibling host). Scripts and
+// tools send no Origin and are not affected. Behind the web process the pages' own check already
+// does this; the api's public listener may be reached without it.
+func (s *Backend) crossOriginGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := s.crossOrigin().Check(r); err != nil {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "cross-origin request refused"})
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // apiMux has the routes of the public API.

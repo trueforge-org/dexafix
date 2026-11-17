@@ -234,6 +234,9 @@ func TestAPI(t *testing.T) {
 	ts, c := newTestServer(t)
 	do := func(method, path, payload string) (int, string) {
 		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(payload))
+		if payload != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
 		resp, err := c.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -487,6 +490,9 @@ func TestMethodsAthleteModeAndSettings(t *testing.T) {
 	signup(t, ts, c, "carol")
 	api := func(method, path, payload string) (int, string) {
 		req, _ := http.NewRequest(method, ts.URL+path, strings.NewReader(payload))
+		if payload != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
 		resp, err := c.Do(req)
 		if err != nil {
 			t.Fatal(err)
