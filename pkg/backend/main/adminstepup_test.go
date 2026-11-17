@@ -41,10 +41,11 @@ func sessionOfClient(t *testing.T, c *http.Client) *http.Cookie {
 	return ct.cookie
 }
 
-// adminProof seals an Admin proof for user uid with the given purpose and lifetime.
-func adminProof(t *testing.T, srv *Server, purpose string, uid int64, ttl time.Duration) *http.Cookie {
+// adminProof seals an Admin proof for user uid, given in the session, with the given purpose and
+// lifetime.
+func adminProof(t *testing.T, srv *Server, purpose string, uid int64, session *http.Cookie, ttl time.Duration) *http.Cookie {
 	t.Helper()
-	sealed, _, err := srv.sealValue(purpose, adminStepUp{UID: uid}, ttl)
+	sealed, _, err := srv.sealValue(purpose, adminStepUp{UID: uid, S: adminSessionBinding(session.Value)}, ttl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,22 +135,22 @@ func TestAdminProofIsNotPortable(t *testing.T) {
 	}
 
 	// control: the root's own proof, with the root's own session
-	if code := page(rootSession, adminProof(t, srv, sealAdminStep, 1, time.Minute)); code != 200 {
+	if code := page(rootSession, adminProof(t, srv, sealAdminStep, 1, rootSession, time.Minute)); code != 200 {
 		t.Fatalf("control: %d, want 200", code)
 	}
 
 	// a proof made for root does not open the Admin pages for bob
-	if r, _ := tfRequest(t, noRedirectClient(), "GET", ts.URL+"/admin", nil, bobSession, adminProof(t, srv, sealAdminStep, 1, time.Minute)); r.StatusCode != 303 || r.Header.Get("Location") != "/admin/verify" {
+	if r, _ := tfRequest(t, noRedirectClient(), "GET", ts.URL+"/admin", nil, bobSession, adminProof(t, srv, sealAdminStep, 1, rootSession, time.Minute)); r.StatusCode != 303 || r.Header.Get("Location") != "/admin/verify" {
 		t.Errorf("root's proof for bob: %d %s", r.StatusCode, r.Header.Get("Location"))
 	}
 
 	// a proof sealed for another purpose is not accepted
-	if code := page(rootSession, adminProof(t, srv, "mfa", 1, time.Minute)); code != 303 {
+	if code := page(rootSession, adminProof(t, srv, "mfa", 1, rootSession, time.Minute)); code != 303 {
 		t.Errorf("proof sealed for another purpose: %d, want 303", code)
 	}
 
 	// an expired proof is not accepted
-	if code := page(rootSession, adminProof(t, srv, sealAdminStep, 1, -time.Second)); code != 303 {
+	if code := page(rootSession, adminProof(t, srv, sealAdminStep, 1, rootSession, -time.Second)); code != 303 {
 		t.Errorf("expired proof: %d, want 303", code)
 	}
 }
@@ -239,5 +240,50 @@ func TestTheAdminAPIAnswersWhenTheSecondStepCannotBeLookedUp(t *testing.T) {
 	cookie := http.Header{"Cookie": {session.Name + "=" + session.Value}}
 	if code, _ := apiCall(t, noRedirectClient(), "GET", ts.URL+"/api/v1/users", "", cookie); code != http.StatusInternalServerError {
 		t.Errorf("status %d, want 500", code)
+	}
+}
+
+// The proof belongs to the session it was given in. A copy of the cookie is of no use with another
+// session of the same administrator, and none once the session is over.
+func TestTheAdminProofBelongsToTheSessionItWasGivenIn(t *testing.T) {
+	ts, root, _ := newAuthServer(t)
+	srv := serverOf(ts)
+	signup(t, ts, root, "root") // user 1, administrator
+	_, recovery := tfEnable(t, srv, 1)
+
+	// Two sign-ins of the same administrator, each with a second step of its own (a code works once,
+	// so the second one uses a recovery code).
+	signIn := func(code string) (*http.Cookie, *http.Cookie) {
+		t.Helper()
+		c := noRedirectClient()
+		mfa := tfMFACookie(t, tfPasswordLogin(t, c, ts.URL, "root@example.com"))
+		r, _ := tfSecondStep(t, c, ts.URL, mfa, code)
+		if r.StatusCode != 303 {
+			t.Fatalf("second step: %d", r.StatusCode)
+		}
+		return sessionCookieOf(t, r), adminCookieOf(t, r)
+	}
+	sessionA, proofA := signIn(tfCode(t, srv, 1))
+	sessionB, _ := signIn(recovery[0])
+	page := func(session, proof *http.Cookie) int {
+		t.Helper()
+		r, _ := tfRequest(t, noRedirectClient(), "GET", ts.URL+"/admin", nil, session, proof)
+		return r.StatusCode
+	}
+	if code := page(sessionA, proofA); code != 200 {
+		t.Fatalf("the proof with its own session: %d", code)
+	}
+	if code := page(sessionB, proofA); code != 303 {
+		t.Errorf("the proof of one session with another session: %d, want 303", code)
+	}
+	if code := page(nil, proofA); code != 303 && code != 401 {
+		t.Errorf("the proof without any session: %d", code)
+	}
+	// Signing out ends the session and with it the proof: a copy of both cookies stays useless.
+	if r, _ := tfRequest(t, noRedirectClient(), "POST", ts.URL+"/logout", url.Values{}, sessionA, proofA); r.StatusCode != 303 {
+		t.Fatalf("sign out: %d", r.StatusCode)
+	}
+	if code := page(sessionA, proofA); code == 200 {
+		t.Errorf("the admin pages opened with a session that was signed out: %d", code)
 	}
 }

@@ -140,7 +140,11 @@ func (s *Backend) authBasic(r *http.Request) (models.User, bool, error) {
 		if herr != nil {
 			return models.User{}, false, herr
 		}
-		if has || s.twoFactorRequired(r.Context(), u) {
+		required, rerr := s.twoFactorRequired(r.Context(), u)
+		if rerr != nil {
+			return models.User{}, false, rerr
+		}
+		if has || required {
 			s.auditAs(r, u.ID, u.ID, auditAPIAuthFailed, "second_factor")
 			return models.User{}, false, nil
 		}
@@ -403,6 +407,9 @@ func (s *Backend) startSession(w http.ResponseWriter, r *http.Request, userID in
 		Name: sessionCookie, Value: token, Path: "/", Expires: expires, MaxAge: int(sessionTTL.Seconds()),
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isSecure(r),
 	})
+	if proven, _ := r.Context().Value(adminProofKey{}).(bool); proven {
+		s.markAdminVerified(w, r, userID, token) // a second step was just done: the Admin pages do not ask again
+	}
 	return nil
 }
 

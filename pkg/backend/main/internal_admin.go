@@ -123,6 +123,11 @@ func (s *Backend) internalAdminPage(w http.ResponseWriter, r *http.Request, u mo
 		internalError(w, err)
 		return
 	}
+	policy, err := s.twoFactorPolicy(ctx)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
 	view := apiclient.AdminPage{
 		Status: apiclient.AdminStatus{
 			Driver: stats.Driver, Encrypted: stats.Encrypted, SchemaVersion: stats.SchemaVersion, Users: stats.Users,
@@ -130,7 +135,7 @@ func (s *Backend) internalAdminPage(w http.ResponseWriter, r *http.Request, u mo
 			Sessions: s.liveSessions(ctx, stats.Sessions), AccessTokens: stats.AccessTokens, TwoFactorUsers: stats.TwoFactorUsers,
 		},
 		PasswordEnabled: s.passwordEnabled(ctx), PasswordForced: s.ForcePasswordLogin,
-		Withings: s.adminWithingsView(r), Key: s.keyView(stats), Require2FA: s.twoFactorPolicy(ctx),
+		Withings: s.adminWithingsView(r), Key: s.keyView(stats), Require2FA: policy,
 		Form: apiclient.AdminProvider{AuthProvider: models.AuthProvider{Kind: models.ProviderKindOIDC}},
 	}
 	if view.SignupOpen, err = s.signupOpen(ctx); err != nil {

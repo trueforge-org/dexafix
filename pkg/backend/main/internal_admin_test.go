@@ -55,7 +55,7 @@ func TestAdminEndpointsOverTheSplit(t *testing.T) {
 	}
 
 	// With the proof, saving the base URL answers config_changed, and a frontend sees it after RefreshConfig.
-	proof := adminProof(t, srv, sealAdminStep, 1, time.Hour)
+	proof := adminProof(t, srv, sealAdminStep, 1, rootSession, time.Hour)
 	withProof := visitor(rootCookie + "; " + proof.Name + "=" + proof.Value)
 	f, err := frontend.NewFrontend(api)
 	if err != nil {

@@ -2,6 +2,9 @@ package mainbackend
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strconv"
@@ -23,31 +26,57 @@ type mfaState struct {
 	UID    int64  `json:"u"`
 	Method string `json:"m"`
 	Enrol  bool   `json:"e,omitempty"` // the user has to set up two-step verification first
+	// PW is a fingerprint of the password the sign-in used. A cookie from before the password was
+	// changed or reset is refused: it proved a password that no longer counts.
+	PW string `json:"p,omitempty"`
+}
+
+// passwordFingerprint identifies the user's current password without revealing it: the start of a
+// hash of the stored password hash. It is empty for an account without a password.
+func (s *Backend) passwordFingerprint(ctx context.Context, userID int64) (string, error) {
+	id, err := s.store.GetIdentity(ctx, models.ProviderLocal, localSubject(userID))
+	if errors.Is(err, store.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256([]byte(id.Secret))
+	return base64.RawURLEncoding.EncodeToString(sum[:12]), nil
 }
 
 // ---- policy and state ----
 
-func (s *Backend) twoFactorPolicy(ctx context.Context) string {
+// twoFactorPolicy reads who must use two-step verification. A policy that cannot be read is an
+// error, not "off": a database that fails for a moment must not let a sign-in skip the step.
+func (s *Backend) twoFactorPolicy(ctx context.Context) (string, error) {
 	v, err := s.store.GetSetting(ctx, settingRequire2FA)
+	if errors.Is(err, store.ErrNotFound) {
+		return require2FAOff, nil
+	}
 	if err != nil {
-		return require2FAOff
+		return "", err
 	}
 	switch v {
 	case require2FAAdmins, require2FAEveryone:
-		return v
+		return v, nil
 	}
-	return require2FAOff
+	return require2FAOff, nil
 }
 
 // twoFactorRequired reports whether the policy covers the user.
-func (s *Backend) twoFactorRequired(ctx context.Context, u models.User) bool {
-	switch s.twoFactorPolicy(ctx) {
-	case require2FAEveryone:
-		return true
-	case require2FAAdmins:
-		return u.IsAdmin()
+func (s *Backend) twoFactorRequired(ctx context.Context, u models.User) (bool, error) {
+	policy, err := s.twoFactorPolicy(ctx)
+	if err != nil {
+		return false, err
 	}
-	return false
+	switch policy {
+	case require2FAEveryone:
+		return true, nil
+	case require2FAAdmins:
+		return u.IsAdmin(), nil
+	}
+	return false, nil
 }
 
 // hasTwoFactor reports whether the user finished setting up two-step verification.
@@ -168,7 +197,12 @@ func (s *Backend) readMFA(r *http.Request) (st mfaState, nonce string, expires t
 		return st, "", time.Time{}, false
 	}
 	nonce, expires, ok = s.openValue(sealMFA, c.Value, &st)
-	return st, nonce, expires, ok && st.UID != 0
+	if !ok || st.UID == 0 {
+		return st, nonce, expires, false
+	}
+	// The password must still be the one that was checked. A lookup that fails refuses the cookie.
+	now, err := s.passwordFingerprint(r.Context(), st.UID)
+	return st, nonce, expires, err == nil && subtle.ConstantTimeCompare([]byte(now), []byte(st.PW)) == 1
 }
 
 // secondStep is called by signInTarget for a password sign-in. It returns the page to continue on
@@ -179,15 +213,23 @@ func (s *Backend) secondStep(w http.ResponseWriter, r *http.Request, u models.Us
 	if err != nil {
 		return "", err
 	}
-	switch {
-	case has:
-		s.setMFACookie(w, r, mfaState{UID: u.ID, Method: method})
-		return "/login/2fa", nil
-	case s.twoFactorRequired(ctx, u):
-		s.setMFACookie(w, r, mfaState{UID: u.ID, Method: method, Enrol: true})
-		return "/login/2fa/setup", nil
+	required, err := s.twoFactorRequired(ctx, u)
+	if err != nil {
+		return "", err
 	}
-	return "", nil
+	if !has && !required {
+		return "", nil
+	}
+	pw, err := s.passwordFingerprint(ctx, u.ID)
+	if err != nil {
+		return "", err
+	}
+	if has {
+		s.setMFACookie(w, r, mfaState{UID: u.ID, Method: method, PW: pw})
+		return "/login/2fa", nil
+	}
+	s.setMFACookie(w, r, mfaState{UID: u.ID, Method: method, Enrol: true, PW: pw})
+	return "/login/2fa/setup", nil
 }
 
 // hasLocalPassword reports whether the user can sign in with a password.
@@ -214,10 +256,29 @@ const (
 
 type adminStepUp struct {
 	UID int64 `json:"u"`
+	// S ties the proof to the session it was given in: a copy of the cookie is of no use to anyone
+	// who does not hold that session, and signing out ends it.
+	S string `json:"s"`
 }
 
-func (s *Backend) markAdminVerified(w http.ResponseWriter, r *http.Request, userID int64) {
-	sealed, _ := must.Value2(s.sealValue(sealAdminStep, adminStepUp{UID: userID}, adminStepUpTTL)) // cannot fail: a plain struct
+// adminSessionBinding is what the proof carries of a session: a hash of its token with a purpose of
+// its own, so that it says nothing about the stored session.
+func adminSessionBinding(token string) string {
+	sum := sha256.Sum256([]byte("admin-step-up:" + token))
+	return base64.RawURLEncoding.EncodeToString(sum[:12])
+}
+
+type adminProofKey struct{}
+
+// withAdminProof marks a sign-in as one that also proves the Admin pages (a second step was just
+// done): the session it starts then comes with the proof.
+func withAdminProof(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), adminProofKey{}, true))
+}
+
+// markAdminVerified gives the proof for the session identified by token.
+func (s *Backend) markAdminVerified(w http.ResponseWriter, r *http.Request, userID int64, token string) {
+	sealed, _ := must.Value2(s.sealValue(sealAdminStep, adminStepUp{UID: userID, S: adminSessionBinding(token)}, adminStepUpTTL)) // cannot fail: a plain struct
 	http.SetCookie(w, &http.Cookie{
 		Name: adminCookie, Value: sealed, Path: "/admin", MaxAge: int(adminStepUpTTL.Seconds()),
 		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isSecure(r),
@@ -229,9 +290,13 @@ func (s *Backend) adminVerified(r *http.Request, userID int64) bool {
 	if err != nil {
 		return false
 	}
+	sc, err := r.Cookie(sessionCookie)
+	if err != nil || sc.Value == "" {
+		return false
+	}
 	var st adminStepUp
 	_, _, ok := s.openValue(sealAdminStep, c.Value, &st)
-	return ok && st.UID == userID
+	return ok && st.UID == userID && subtle.ConstantTimeCompare([]byte(st.S), []byte(adminSessionBinding(sc.Value))) == 1
 }
 
 // needsAdminStepUp reports whether the administrator has to enter a code before the Admin pages.
@@ -324,7 +389,9 @@ func (s *Backend) internalAdminVerify(w http.ResponseWriter, r *http.Request, u 
 		return
 	}
 	s.limiter.Reset(r.Context(), mfaKey(u.ID))
-	s.markAdminVerified(w, r, u.ID)
+	if sc, err := r.Cookie(sessionCookie); err == nil { // the session the proof is for: this one
+		s.markAdminVerified(w, r, u.ID, sc.Value)
+	}
 	s.audit(r, u.ID, auditAdminVerified, "")
 	secondStepRedirect(w, "/admin")
 }
@@ -436,7 +503,12 @@ func (s *Backend) internalTwoFactorDisable(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	ctx := r.Context()
-	if s.twoFactorRequired(ctx, u) {
+	required, err := s.twoFactorRequired(ctx, u)
+	if err != nil {
+		internalError(w, err)
+		return
+	}
+	if required {
 		internalFail(w, http.StatusForbidden, apiclient.CodeForbidden, "Your administrator requires two-step verification.")
 		return
 	}

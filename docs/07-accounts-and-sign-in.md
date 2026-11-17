@@ -186,7 +186,8 @@ possible while an administrator requires two-step verification.
 
 After the password, the sign-in page asks for the code on a second page. Enter
 the 6-digit code, or a recovery code, in the same field. The password check is
-kept in a signed cookie for 5 minutes. The cookie is not a session.
+kept in a signed cookie for 5 minutes. The cookie is not a session, and it stops
+working as soon as the password is changed or reset.
 
 A code works once: a code that was already used is refused, even within its
 30 seconds. Five wrong codes for an account within 15 minutes block that
@@ -208,8 +209,13 @@ command in [Commands](05-commands.md#account-commands).
 An administrator who has two-step verification on is asked for a code again
 before any Admin page (`/admin`). The code entered at sign-in counts, so there is
 no second prompt straight after signing in. The step-up lasts 15 minutes, kept
-in a signed cookie tied to the administrator's account. A recovery code works
-too. The JSON API is not affected: it uses access tokens.
+in a signed cookie tied to the administrator's account and to the session it was
+entered in, so signing out ends it. A recovery code works too. The JSON API does
+not see that cookie: an administrator with two-step verification uses an access
+token there (a session cookie alone is refused).
+
+If the setting that requires two-step verification cannot be read (the database
+does not answer), a sign-in fails instead of going on without the step.
 
 The audit log records `admin_verified` for each step-up, and `totp_enabled`,
 `totp_disabled`, `totp_removed_by_admin`, `recovery_codes_regenerated`,

@@ -26,7 +26,9 @@ func (s *Backend) securityView(r *http.Request, u models.User, newToken string) 
 		return nil, err
 	}
 	view.TwoFactor.Available = pwOn && hasPw
-	view.TwoFactor.Required = s.twoFactorRequired(ctx, u)
+	if view.TwoFactor.Required, err = s.twoFactorRequired(ctx, u); err != nil {
+		return nil, err
+	}
 	if view.TwoFactor.Enabled, err = s.hasTwoFactor(ctx, u.ID); err != nil {
 		return nil, err
 	}

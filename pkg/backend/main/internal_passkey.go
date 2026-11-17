@@ -418,6 +418,6 @@ func (s *Backend) internalPasskeyLoginFinish(w http.ResponseWriter, r *http.Requ
 	clearPasskeyCookie(w, r)
 	// The address counter is not cleared: anybody can hold a passkey of their own, so a success here
 	// proves nothing about the other names that address has been trying.
-	s.markAdminVerified(w, r, signedIn.ID) // a passkey with its unlock is two factors: the Admin pages do not ask again
-	s.internalSignIn(w, r, signedIn, models.ProviderPasskey)
+	// A passkey with its unlock is two factors: the Admin pages do not ask again.
+	s.internalSignIn(w, withAdminProof(r), signedIn, models.ProviderPasskey)
 }

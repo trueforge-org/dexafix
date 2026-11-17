@@ -105,12 +105,12 @@ func (s *Backend) internalLoginTwoFactor(w http.ResponseWriter, r *http.Request)
 			s.auditAs(r, u.ID, u.ID, auditRecoveryUsed, "last")
 		}
 	}
-	target, err := s.completeSignIn(w, r, u, st.Method)
+	// The code just entered counts for the Admin pages too.
+	target, err := s.completeSignIn(w, withAdminProof(r), u, st.Method)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
-	s.markAdminVerified(w, r, u.ID) // the code just entered counts for the Admin pages too
 	secondStepRedirect(w, target)
 }
 
@@ -188,12 +188,11 @@ func (s *Backend) internalLoginSetup(w http.ResponseWriter, r *http.Request) {
 	s.limiter.Reset(r.Context(), mfaKey(st.UID))
 	clearMFACookie(w, r)
 	s.auditAs(r, u.ID, u.ID, auditTOTPEnabled, "required")
-	target, err := s.completeSignIn(w, r, u, st.Method)
+	target, err := s.completeSignIn(w, withAdminProof(r), u, st.Method)
 	if err != nil {
 		internalError(w, err)
 		return
 	}
-	s.markAdminVerified(w, r, u.ID)
 	// Signed in; the recovery codes are shown once, on this response, never in a redirect.
 	secondStepPage(w, apiclient.SecondStep{Mode: "codes", Codes: codes, Continue: target}, http.StatusOK)
 }
@@ -352,10 +351,7 @@ func (s *Backend) internalReset(w http.ResponseWriter, r *http.Request) {
 	s.auditAs(r, u.ID, u.ID, auditResetCompleted, "")
 	var target string
 	if has { // the code was just checked: no second prompt for the same sign-in
-		target, err = s.completeSignIn(w, r, u, models.ProviderLocal)
-		if err == nil {
-			s.markAdminVerified(w, r, u.ID)
-		}
+		target, err = s.completeSignIn(w, withAdminProof(r), u, models.ProviderLocal)
 	} else {
 		target, err = s.signInTarget(w, r, u, models.ProviderLocal)
 	}

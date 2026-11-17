@@ -267,13 +267,15 @@ func TestSplitPasskeyCeremonyCookieReachesTheRelay(t *testing.T) {
 func TestSplitAdminEndpointRefusesWithoutStepUpProof(t *testing.T) {
 	_, srv, sess := newInternalServer(t)
 	tfEnable(t, srv, 1)
-	// A test-only admin endpoint behind the guard, served like the real internal API.
+	// A test-only admin endpoint behind the guard, served like the real internal API. Everything
+	// else goes to the real internal handler, which restores the visitor's cookies itself, so only
+	// the test endpoint is wrapped here.
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET "+apiclient.Prefix+"/test/admin", srv.internalAdmin(func(w http.ResponseWriter, r *http.Request, u models.User) {
+	mux.Handle("GET "+apiclient.Prefix+"/test/admin", srv.serviceAuth(srv.visitorContext(srv.withAuth(srv.internalAdmin(func(w http.ResponseWriter, r *http.Request, u models.User) {
 		internalJSON(w, http.StatusOK, map[string]string{"admin": u.Email})
-	}))
-	mux.HandleFunc(apiclient.Prefix+"/", srv.InternalHandler().ServeHTTP)
-	ts := httptest.NewServer(srv.serviceAuth(srv.visitorContext(srv.withAuth(mux))))
+	})))))
+	mux.Handle(apiclient.Prefix+"/", srv.InternalHandler())
+	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	c := splitClient(t, ts)
 	call := func(cookie string, relay http.ResponseWriter) error {

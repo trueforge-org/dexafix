@@ -24,12 +24,12 @@ func TestTheTwoFactorPolicyIgnoresAValueItDoesNotKnow(t *testing.T) {
 	if err := g.st.PutSetting(context.Background(), settingRequire2FA, "sometimes"); err != nil {
 		t.Fatal(err)
 	}
-	if got := g.b.twoFactorPolicy(context.Background()); got != require2FAOff {
-		t.Fatalf("policy %q, want %q", got, require2FAOff)
+	if got, err := g.b.twoFactorPolicy(context.Background()); err != nil || got != require2FAOff {
+		t.Fatalf("policy %q %v, want %q", got, err, require2FAOff)
 	}
 	u, _ := g.st.GetUser(context.Background(), uid)
-	if g.b.twoFactorRequired(context.Background(), u) {
-		t.Fatal("an unknown policy required two-step verification")
+	if req, err := g.b.twoFactorRequired(context.Background(), u); err != nil || req {
+		t.Fatalf("an unknown policy required two-step verification: %v %v", req, err)
 	}
 }
 

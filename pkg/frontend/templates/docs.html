@@ -118,9 +118,9 @@
   <li><strong>Turn on:</strong> Settings, <em>Two-step verification</em>. Confirm your password, scan the QR code (or type the key in), then enter a code from the app. Standard apps work: 6 digits, a new code every 30 seconds, SHA-1.</li>
   <li><strong>Recovery codes:</strong> ten codes, shown once, in the form <code>xxxx-xxxx-xxxx-xxxx</code>. Each works once, in place of an app code. To get new ones, confirm your password and a code in Settings; the old ones stop working.</li>
   <li><strong>Turn off:</strong> your password and a code, or a recovery code. It cannot be turned off while an administrator requires it.</li>
-  <li><strong>Sign-in:</strong> the code is asked for on a second page, and the password check is kept for 5 minutes in a signed cookie (not a session). A code works once. Five wrong codes for an account within 15 minutes block its second step.</li>
+  <li><strong>Sign-in:</strong> the code is asked for on a second page, and the password check is kept for 5 minutes in a signed cookie (not a session; it stops working when the password is changed or reset). A code works once. Five wrong codes for an account within 15 minutes block its second step.</li>
   <li><strong>Administrators:</strong> on the Admin page, require it for <em>Nobody</em> (default), <em>Administrators</em> or <em>Everyone</em>. Covered people who have no second step set it up at their next password sign-in.</li>
-  <li><strong>Admin pages:</strong> an administrator with two-step verification on is asked for a code again (or a recovery code) before any Admin page. The code entered at sign-in counts. The step-up lasts 15 minutes and is recorded as <code>admin_verified</code>. The JSON API uses access tokens and is not affected.</li>
+  <li><strong>Admin pages:</strong> an administrator with two-step verification on is asked for a code again (or a recovery code) before any Admin page. The code entered at sign-in counts. The step-up lasts 15 minutes, belongs to the session it was entered in (signing out ends it) and is recorded as <code>admin_verified</code>. The JSON API uses access tokens: a session cookie alone is refused there.</li>
   <li><strong>API:</strong> HTTP Basic is refused for these accounts. Use an access token.</li>
 </ul>
 
