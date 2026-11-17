@@ -11,3 +11,6 @@
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# private security audit notes: findings stay out of git until fixed
+/security-audit.md
