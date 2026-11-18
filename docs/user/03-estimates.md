@@ -33,7 +33,6 @@ scale's own values are used only when they cannot be calculated.
 
 The full rules are in [Estimation details](../developer/03-estimation-details.md).
 
-
 ## The daily estimates step by step {#how-estimates-work}
 
 Each field is handled on its own. The estimated fields are weight, body fat, fat mass, fat-free mass, bone mass, lean mass, hydration, visceral fat index, BMI, FMI, LMI and the A/G ratio.

@@ -756,7 +756,7 @@
             {
               "id": "estimate-cache",
               "title": "Estimate cache",
-              "level": 3
+              "level": 2
             }
           ]
         },
@@ -781,8 +781,8 @@
               "level": 2
             },
             {
-              "id": "ci-and-releases-1",
-              "title": "CI and releases",
+              "id": "what-ci-checks",
+              "title": "What CI checks",
               "level": 2
             },
             {

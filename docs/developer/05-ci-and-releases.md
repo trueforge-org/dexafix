@@ -10,7 +10,7 @@
 [![Sponsor on Open Collective](https://img.shields.io/opencollective/all/dexafix?label=sponsor&logo=opencollective)](https://opencollective.com/dexafix)
 ```
 
-## CI and releases
+## What CI checks
 
 `.github/workflows/ci.yaml` runs on pushes to `main`, pull requests, manually and weekly (Monday):
 

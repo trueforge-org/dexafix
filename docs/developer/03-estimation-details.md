@@ -81,7 +81,7 @@ field is handled on its own.
      until the next scan with a ratio. There is no value before the first such
      scan.
 
-### Estimate cache
+## Estimate cache
 
 Computing the estimates walks a user's whole history, so the result is kept in
 memory per user (for the 32 most recently used users), by the

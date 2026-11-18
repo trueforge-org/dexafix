@@ -66,6 +66,7 @@ of the store. The main backend does not import the frontend or the body service
 (its tests may, to drive the HTML flows and to run a body service next to it),
 and the body service does not import the main backend, the frontend, the workers,
 the mailer or a sign-in library.
+
 - `pkg/estimate/`: estimation logic.
 - `pkg/strengthlevel/`: the Strength Level entries built from the estimates
   (`strengthlevel.go`) and the sync client (`client/`).
