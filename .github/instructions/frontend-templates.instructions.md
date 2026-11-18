@@ -41,4 +41,4 @@ Settings, Admin and the add-entry pages share one layout, so a control is always
 
 ## In-app documentation
 
-`templates/docs.html` is the documentation inside the app. It mirrors `docs/`. When behaviour, flags, routes, settings or deployment steps change, update both. Every `href="#..."` needs a matching `id="..."`; `docs_test.go` checks it. Add new sections to the table of contents at the top.
+The documentation inside the app is generated from `docs/` (see [`docs.instructions.md`](docs.instructions.md)): `docs.go` serves `/docs` (the three audiences) and `/docs/{section}/{page}` from the embedded `docsite/`. `templates/docs.html` and `docsindex.html` only draw the navigation around the generated page. Do not write documentation text in a template. To link to the documentation use `{{help "id"}}` (the small "?" badge) or `{{docsURL "id"}}` (a plain address); the id is an explicit heading id in `docs/` (`## Title {#id}`), and `TestTemplateDocLinksResolve` fails for one that does not exist. Never hard-code `/docs#...`.
