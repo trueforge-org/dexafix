@@ -30,6 +30,7 @@ See [Password sign-in](../user/02-accounts-and-sign-in.md#password-login). Turn 
 ## Two-step verification {#admin-two-step}
 
 Choose who must use it: *Nobody* (default), *Administrators* or *Everyone*. Administrators with it on are asked for a code again before any Admin page. See [Two-step verification](../user/02-accounts-and-sign-in.md#two-step).
+
 ## Sign-in providers {#providers}
 
 Administrators add providers on the Admin page. There are three types:
@@ -69,7 +70,6 @@ the provider's e-mail address on first sign-in, unless the provider marks it
 unverified. If that address is already in use, sign-in is refused. The person
 must then sign in to the existing account and link the provider in Settings.
 Removing a provider also removes its links.
-
 
 ### The provider form, field by field {#admin-providers}
 
@@ -148,7 +148,6 @@ bone mass and visceral fat. Measurements Withings marks as possibly belonging
 to someone else (for example a guest) are ignored. Days are calendar days in the
 user's time zone.
 
-
 ## Withings workers and automatic imports {#withings-workers}
 
 Talking to Withings is done by a [worker](07-workers.md), never by the web or
@@ -164,7 +163,6 @@ last 14 days for every user with a linked account. After the number of failed
 runs in a row that the administrator set, a user's automatic imports pause. They
 start again when the user disconnects and connects Withings again, or when an
 administrator resumes them.
-
 
 ## Network and retention {#admin-network}
 
@@ -221,4 +219,3 @@ Admin page (365 by default; `0` keeps them forever). When a user
 is deleted, the IP addresses in the events about them are cleared and the
 events no longer refer to them. Recording an event never fails the request
 that caused it; a failed write is logged.
-
