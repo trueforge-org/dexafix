@@ -119,7 +119,7 @@ func TestConfirmRollback(t *testing.T) {
 	if !strings.Contains(stderr.String(), "00001_init.sql") || !strings.Contains(stderr.String(), "drops") {
 		t.Errorf("no explanation of what is dropped:\n%s", stderr.String())
 	}
-	if err := confirmRollback(ctx, c, st, 5); err != nil {
+	if err := confirmRollback(ctx, c, st, 6); err != nil {
 		t.Errorf("moving up needs no confirmation: %v", err)
 	}
 	c.Flags().Set("yes", "true")
