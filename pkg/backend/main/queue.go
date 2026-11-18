@@ -44,6 +44,8 @@ type enqueueSpec struct {
 	Dedupe      string // at most one active job per key; empty: a key made from the kind and the user (none without a user)
 	Payload     any    // JSON-encoded parameters
 	Expires     time.Duration
+	// SingleAttempt: no retry, because somebody waits for the answer and a back-off would outlast them.
+	SingleAttempt bool
 	// Timeout raises the hard limit of an attempt above the kind's setting (a sync of many days
 	// needs more time); it never lowers it, and never goes past the longest an administrator may set.
 	Timeout time.Duration
@@ -105,6 +107,9 @@ func (s *Backend) enqueueJob(ctx context.Context, e enqueueSpec) (job models.Job
 	n := models.NewJob{
 		UserID: e.UserID, Kind: e.Kind, Origin: e.Origin, Interactive: e.Interactive, DedupeKey: key,
 		Payload: payload, MaxAttempts: ks.MaxAttempts, Timeout: ks.Timeout,
+	}
+	if e.SingleAttempt {
+		n.MaxAttempts = 1
 	}
 	if e.Timeout > n.Timeout {
 		n.Timeout = min(e.Timeout, maxJobTimeoutSeconds*time.Second)

@@ -160,6 +160,7 @@ func NewBackend(st store.Store, opts ...Option) (*Backend, error) {
 	s.addWorkerProvider(withingsProvider())
 	s.addWorkerProvider(strengthLevelProviderSpec())
 	s.addWorkerProvider(oidcProviderSpec())
+	s.addWorkerProvider(mailProviderSpec())
 	s.authChain = []authStep{{methodSession, s.authSession}, {methodToken, s.authBearer}, {methodToken, s.authBasic}}
 	ctx := context.Background()
 	var err error

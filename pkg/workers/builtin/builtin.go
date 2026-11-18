@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
+	"github.com/trueforge-org/dexafix/pkg/workers/mail"
 	"github.com/trueforge-org/dexafix/pkg/workers/oidc"
 	"github.com/trueforge-org/dexafix/pkg/workers/runner"
 	"github.com/trueforge-org/dexafix/pkg/workers/strengthlevel"
@@ -37,6 +38,9 @@ var providers = map[string]func(Options) map[string]runner.Handler{
 	},
 	workerapi.ProviderOIDC: func(o Options) map[string]runner.Handler {
 		return oidc.New(o.HTTPClient).Handlers()
+	},
+	workerapi.ProviderMail: func(Options) map[string]runner.Handler {
+		return mail.New().Handlers()
 	},
 }
 

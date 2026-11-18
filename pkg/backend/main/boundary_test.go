@@ -10,6 +10,22 @@ import (
 // HTML flows; test files do not count here). It does not import the body service either: it reaches
 // the scans, readings and estimates only through the contract in pkg/shared/bodyapi, so the two can
 // run as separate processes.
+// The backend makes no connection to the outside: sign-in providers and the mail server are reached by
+// workers. It may import the e-mail configuration and its check (pkg/mailer), never the SMTP sender
+// or the SMTP library.
+func TestBackendCannotSpeakSMTP(t *testing.T) {
+	const module = "github.com/trueforge-org/dexafix/"
+	out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", ".").Output()
+	if err != nil {
+		t.Fatalf("go list: %v", err)
+	}
+	for _, d := range strings.Fields(string(out)) {
+		if d == "net/smtp" || d == module+"pkg/mailer/smtpsend" {
+			t.Errorf("the main backend depends on %s", d)
+		}
+	}
+}
+
 func TestBackendDoesNotImportTheFrontend(t *testing.T) {
 	const module = "github.com/trueforge-org/dexafix/"
 	out, err := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", ".").Output()

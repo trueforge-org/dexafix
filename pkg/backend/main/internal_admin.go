@@ -967,7 +967,10 @@ func (s *Backend) internalAdminTestSMTP(w http.ResponseWriter, r *http.Request, 
 		adminMsg(w, "Your account has no e-mail address to send the test to.")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)
+	if jm, ok := m.(*jobMailer); ok { // the page waits for the worker, to say how it went
+		m = jm.waiting()
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), mailWait+10*time.Second)
 	defer cancel()
 	if err := m.Send(ctx, u.Email, "DexaFix test e-mail", "This is a test e-mail from DexaFix. E-mail is working.\n"); err != nil {
 		adminMsg(w, outboundFailure(err, "Could not send the test e-mail", settingLabelMail))
