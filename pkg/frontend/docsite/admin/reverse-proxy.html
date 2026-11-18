@@ -1,0 +1,248 @@
+<h1 id="running-behind-a-reverse-proxy">Running behind a reverse proxy</h1>
+<p>DexaFix speaks plain HTTP. For HTTPS, put a reverse proxy such as nginx, Caddy
+or Traefik in front of it, and bind DexaFix to a private address so that
+nobody can bypass the proxy: <code>--listen 127.0.0.1:8080</code>. DexaFix can also serve
+HTTPS itself, see <a href="#https-http2-and-http3">HTTPS, HTTP/2 and HTTP/3</a>.</p>
+<p>A proxy hides two things from the app: who the visitor is (every connection
+comes from the proxy) and whether they used HTTPS. The proxy passes both on in
+the <code>X-Forwarded-For</code>, <code>X-Forwarded-Proto</code> and <code>X-Forwarded-Host</code> headers. Any
+visitor can send those headers too, so DexaFix only believes them on
+connections from the trusted proxies. From everyone else they are ignored, and
+a warning is logged once.</p>
+<h2 id="trusted-proxies-and-base-url">Trusted proxies and base URL</h2>
+<p>Both are set on the Admin page, under <strong>Network and retention</strong>. They are stored
+in the database, not in flags, and take effect at once without a restart.</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Trusted proxies</td>
+<td>Comma-separated addresses or CIDR ranges of your proxies, such as <code>127.0.0.1,10.0.0.0/8</code>. The keyword <code>loopback</code> stands for <code>127.0.0.0/8</code> and <code>::1</code>; <code>private</code> adds the RFC 1918 ranges and <code>fc00::/7</code>. Empty trusts nobody.</td>
+</tr>
+<tr>
+<td>Base URL</td>
+<td>The public address, scheme and host only (no path), such as <code>https://dexa.example.com</code>. Optional when the proxy forwards <code>Host</code> and <code>X-Forwarded-Proto</code> correctly; set it for a fixed, predictable address. Saving it is accepted only while you use that address, so a typo cannot lock you out.</td>
+</tr>
+</tbody>
+</table></div>
+<p>What changes when the proxy is trusted:</p>
+<ul>
+<li><strong>Sign-in limits and the audit log</strong> use the visitor's address. Without this,
+everyone shares the proxy's address: one person's failed sign-ins would block
+everybody, and the audit log would show only the proxy.</li>
+<li><strong>Cookies are marked <code>Secure</code></strong> and <code>Strict-Transport-Security</code> is sent, as
+soon as the visitor used HTTPS (as reported by the proxy), or the base URL is
+<code>https</code>.</li>
+<li><strong>Sign-in provider callback URLs</strong> (the ones to register at your identity
+provider, shown on the Admin page) are built from the base URL, or else from
+<code>X-Forwarded-Proto</code> and the host.</li>
+<li><strong>Form posts pass the same-origin check.</strong> The browser's <code>Origin</code> has to match
+the host it visited, which is why the proxy must pass the original host, either
+as <code>Host</code> or as <code>X-Forwarded-Host</code>, or you set the base URL.</li>
+<li><strong>Passkeys</strong> need HTTPS in the browser, and belong to the host name the browser
+uses. Behind a proxy that terminates TLS, set an <code>https</code> base URL. See
+<a href="/docs/user/accounts-and-sign-in#passkeys-doc">Passkeys</a>.</li>
+</ul>
+<p>For the address, the app reads <code>X-Forwarded-For</code> from the right: it skips every
+address that belongs to a trusted proxy, and the first address after that is
+the visitor. Anything the visitor wrote further left is never used. Make sure
+the proxy appends to this header instead of passing along what the client sent.
+Without <code>X-Forwarded-For</code>, <code>X-Real-IP</code> is used.</p>
+<h2 id="examples">Examples</h2>
+<p>Examples, assuming DexaFix listens on <code>127.0.0.1:8080</code> on the same machine:</p>
+<pre><code class="language-text"># nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# Caddy: forwards the headers by default
+dexa.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+
+# Traefik (docker labels)
+traefik.http.routers.dexa.rule=Host(`dexa.example.com`)
+traefik.http.routers.dexa.tls=true
+traefik.http.services.dexa.loadbalancer.server.port=8080
+</code></pre>
+<p>On the Admin page, set <strong>Trusted proxies</strong> to <code>loopback</code> and <strong>Base URL</strong> to
+<code>https://dexa.example.com</code>, then start DexaFix with:</p>
+<pre><code class="language-sh">dexafix serve --listen 127.0.0.1:8080
+</code></pre>
+<p>In Docker, the proxy reaches the app from the network's bridge address, so use
+the network's range, or <code>private</code>. Only trust ranges that nothing but your
+proxies can send from.</p>
+<p>DexaFix must be served from the root of its host. A sub-path such as
+<code>example.com/dexa/</code> is not supported. If you use Withings, the redirect URL on the Admin page
+has to be the public callback address, for example
+<code>https://dexa.example.com/integrations/withings/callback</code>.</p>
+<h2 id="proxy-protocol">PROXY protocol</h2>
+<p>The PROXY protocol (HAProxy versions 1 and 2) passes the visitor's address on
+the TCP connection itself, before any HTTP. Use it with a balancer that works at
+TCP level and adds no <code>X-Forwarded-For</code> header.</p>
+<p>Turn on <strong>Accept the PROXY protocol from the trusted proxies</strong> on the Admin page.
+It needs trusted proxies. With it on:</p>
+<ul>
+<li>A connection from a trusted proxy may start with the header. The address in it
+becomes the visitor's address. The header is optional there, so a balancer
+that does not send it cannot lock anyone out.</li>
+<li>A connection from any other address may not start with the header. It is
+refused, so nobody can claim an address.</li>
+<li>With the setting off, connections pass through untouched.</li>
+</ul>
+<p>It applies to the plain and the HTTPS listener, and to each new connection at
+once. The header does not say whether the visitor used HTTPS, so set an <code>https</code>
+base URL to get <code>Secure</code> cookies.</p>
+<p>HAProxy terminates TLS and sends the address with <code>send-proxy-v2</code>:</p>
+<pre><code class="language-text"># haproxy.cfg
+frontend dexa
+    mode http
+    bind :443 ssl crt /etc/haproxy/dexa.pem
+    http-request set-header X-Forwarded-Proto https
+    default_backend dexa
+
+backend dexa
+    mode http
+    server dexa 127.0.0.1:8080 send-proxy-v2
+</code></pre>
+<p>An AWS Network Load Balancer works at TCP level and adds no headers. Use a TCP
+listener on port 443, forward it to a target group on port 8443 (the HTTPS port
+of DexaFix, with a certificate you upload on the Admin page), and turn on
+<strong>Proxy protocol v2</strong> for the target group. Trusted proxies must cover the
+addresses the load balancer connects from, for example your VPC range.</p>
+<p>nginx passes TCP through with the <code>stream</code> module and sends the address with
+<code>proxy_protocol on</code>:</p>
+<pre><code class="language-text"># nginx.conf, stream context
+stream {
+    server {
+        listen 443;
+        proxy_pass 127.0.0.1:8443;
+        proxy_protocol on;
+    }
+}
+</code></pre>
+<p>Here DexaFix serves HTTPS on port 8443 and trusts <code>loopback</code>.</p>
+<h2 id="https-http2-and-http3">HTTPS, HTTP/2 and HTTP/3</h2>
+<p>DexaFix can serve HTTPS itself. Behind a reverse proxy you usually leave this
+off and let the proxy terminate TLS. Plain HTTP stays on the <code>--listen</code> port,
+with HTTP/1.1 and cleartext HTTP/2 (h2c, with prior knowledge) for proxies that
+speak it to the backend.</p>
+<p>Set it on the Admin page, under <strong>HTTPS, HTTP/2 and HTTP/3</strong>:</p>
+<ul>
+<li><strong>Certificate</strong>: either upload a PEM certificate chain and a PEM private key,
+or let DexaFix generate a self-signed certificate. An uploaded key is stored
+encrypted and is never shown again. Leave both fields empty to keep the saved
+certificate.</li>
+<li>A <strong>self-signed</strong> certificate is ECDSA P-256, valid 365 days, and renewed
+automatically 30 days before it expires. Its names are the names you give, or
+else the base URL's host plus <code>localhost</code>, <code>127.0.0.1</code> and <code>::1</code>.</li>
+<li><strong>HTTPS port</strong>: 8443 by default. It must differ from the plain HTTP port. HTTPS
+runs on its own listener, so a bad certificate or port cannot lock you out of
+the plain one. HTTP/2 and HTTP/1.1 are offered by ALPN on TLS 1.2 and later.</li>
+<li><strong>Also serve HTTP/3 (QUIC)</strong>: runs on the UDP port with the same number as the
+HTTPS port, and is advertised to HTTPS clients with an <code>Alt-Svc</code> header. The
+UDP port must be reachable.</li>
+</ul>
+<p>The Admin page shows the certificate names, expiry, SHA-256 fingerprint and any
+bind error.</p>
+<p>With Docker, publish both ports, and the UDP one for HTTP/3:</p>
+<pre><code class="language-bash">docker run -p 8080:8080 -p 8443:8443 -p 8443:8443/udp -v dexafix-data:/config ghcr.io/trueforge-org/dexafix:latest
+</code></pre>
+<p>Browsers and apps trust a self-signed certificate only once you add it to their
+trust store, and browsers use HTTP/3 only with a trusted certificate. There is
+no redirect from HTTP to HTTPS yet.</p>
+<p>Passkeys belong to the address you open, port included. Use the HTTPS address
+for them, such as <code>https://dexa.example.com:8443</code>, and not the plain HTTP one.</p>
+<h2 id="behind-a-cdn-or-caching-proxy">Behind a CDN or caching proxy</h2>
+<p>Everything DexaFix serves except <code>/static/</code> is personal: pages, exports, the JSON API and error pages. Every
+such response carries <code>Cache-Control: no-store</code>, <code>CDN-Cache-Control: no-store</code> and <code>Surrogate-Control: no-store</code>.
+The last two speak to CDNs such as Cloudflare, Fastly and Akamai directly. The one exception is the estimates
+endpoint of the API, which sends <code>Cache-Control: private, no-cache</code> with an ETag, so a browser may keep a copy
+and ask whether it is still good, while a shared cache may not keep it. A test (<code>cache_test.go</code>) checks this on
+pages, redirects, errors and the API, and that <code>/static/</code> lists no directory.</p>
+<p>Only <code>/static/</code> files with a <code>?v=</code> version may be cached for long. They hold no personal data.</p>
+<p>A CDN rule can override an origin's headers. A rule such as Cloudflare's <em>Cache Everything</em> with an <em>Edge Cache
+TTL</em> that overrides the origin would serve one visitor's page to another. To be safe:</p>
+<ul>
+<li>Cache <code>/static/*</code> only, and bypass the cache for everything else. Do not use <em>Cache Everything</em> on the whole site.</li>
+<li>Do not let a rule override the origin's cache headers for paths other than <code>/static/*</code>.</li>
+<li>Do not use a page-cache feature on a site that has sign-in.</li>
+</ul>
+<p>I have not tested this against a real CDN account; the headers and the test above are what the code does.</p>
+<p>For the visitor's address, add the CDN's address ranges to <strong>Trusted proxies</strong> (Cloudflare publishes its list at
+<code>https://www.cloudflare.com/ips/</code>). DexaFix then walks <code>X-Forwarded-For</code> from the right, past every trusted proxy,
+and takes the first address nobody trusted. A visitor cannot make up their address that way, and a request that
+reaches the origin directly, not through the CDN, has its <code>X-Forwarded-*</code> headers ignored. Without the CDN's
+ranges in the list every visitor looks like the CDN, and the limit on failed sign-ins per address (60 in 15
+minutes) would lock out everybody together.</p>
+<h2 id="two-processes-path-split">Two processes: path split</h2>
+<p>With the <a href="/docs/admin/split-deployment">split deployment</a>, the proxy sends <code>/api/</code> to
+the api process's public listener and everything else to the web process. Both
+must see the proxy as trusted. Set <strong>Trusted proxies</strong> once on the Admin page:
+it is stored in the database, so it applies to both processes.</p>
+<p>The examples assume the web process listens on <code>web:8080</code> and the api process
+on <code>api:8080</code>, for example on one Docker network:</p>
+<pre><code class="language-text"># nginx
+location /api/ {
+    proxy_pass http://api:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location / {
+    proxy_pass http://web:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+# Caddy
+dexa.example.com {
+    handle /api/* {
+        reverse_proxy api:8080
+    }
+    handle {
+        reverse_proxy web:8080
+    }
+}
+
+# Traefik (docker labels on the api service)
+traefik.http.routers.dexa-api.rule=Host(`dexa.example.com`) &amp;&amp; PathPrefix(`/api/`)
+traefik.http.routers.dexa-api.tls=true
+traefik.http.services.dexa-api.loadbalancer.server.port=8080
+
+# Traefik (docker labels on the web service)
+traefik.http.routers.dexa-web.rule=Host(`dexa.example.com`)
+traefik.http.routers.dexa-web.tls=true
+traefik.http.services.dexa-web.loadbalancer.server.port=8080
+
+# haproxy.cfg
+frontend dexa
+    mode http
+    bind :443 ssl crt /etc/haproxy/dexa.pem
+    http-request set-header X-Forwarded-Proto https
+    http-request set-header X-Forwarded-For %[src]
+    use_backend dexa_api if { path_beg /api/ }
+    default_backend dexa_web
+
+backend dexa_api
+    mode http
+    server api api:8080
+
+backend dexa_web
+    mode http
+    server web web:8080
+</code></pre>
+<p>The path split needs a proxy that reads the path, so it must terminate TLS. If
+the web process serves HTTPS itself, a proxy that only passes TCP cannot split
+the paths. Then set <code>DEXAFIX_API_UPSTREAM</code> on the web process instead, and see
+<a href="/docs/admin/split-deployment#tls-and-http3">Split deployment</a>.</p>

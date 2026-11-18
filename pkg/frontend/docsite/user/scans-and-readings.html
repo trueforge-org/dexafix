@@ -1,0 +1,252 @@
+<h1 id="dexa-scans-and-scale-readings">DEXA scans and scale readings</h1>
+<h2 id="dexa-page">DEXA scans</h2>
+<p>Page: <code>/u/{id}/dexa</code>. A DEXA scan is your reference. A scan needs a date and at least one measurement. Numbers may use a decimal comma. Every field is optional.</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th>JSON key</th>
+<th>Unit</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Date</td>
+<td><code>measured_at</code></td>
+<td>date</td>
+<td>Required, from 1900-01-01 to tomorrow. In the API an RFC 3339 timestamp; its date in your time zone is used. Scans are matched to scale readings by the reading's day in your time zone.</td>
+</tr>
+<tr>
+<td>Weight</td>
+<td><code>weight_kg</code></td>
+<td>kg</td>
+<td>Total body weight. Used as the estimate on the scan day but never corrected.</td>
+</tr>
+<tr>
+<td>Body fat</td>
+<td><code>fat_ratio_pct</code></td>
+<td>%</td>
+<td>Body fat percentage. Calibrates the scale's body fat %. If left out but fat mass and weight are known, it is calculated as fat mass / weight x 100.</td>
+</tr>
+<tr>
+<td>Fat mass</td>
+<td><code>fat_mass_kg</code></td>
+<td>kg</td>
+<td>Total fat mass.</td>
+</tr>
+<tr>
+<td>Fat-free mass</td>
+<td><code>fat_free_mass_kg</code></td>
+<td>kg</td>
+<td>Weight minus fat mass (includes bone).</td>
+</tr>
+<tr>
+<td>Lean mass</td>
+<td><code>lean_mass_kg</code></td>
+<td>kg</td>
+<td>Fat-free mass minus bone mass (lean soft tissue).</td>
+</tr>
+<tr>
+<td>Bone mass (BMC)</td>
+<td><code>bone_mass_kg</code></td>
+<td>kg</td>
+<td>Bone mineral content. Calibrates the scale's bone mass.</td>
+</tr>
+<tr>
+<td>Visceral fat (VAT)</td>
+<td><code>visceral_fat_mass_kg</code></td>
+<td>kg</td>
+<td>Visceral adipose tissue mass. Stored and exported; it is not used in estimates, because scale visceral fat is an index, not a mass.</td>
+</tr>
+<tr>
+<td>BMD</td>
+<td><code>bmd_g_cm2</code></td>
+<td>g/cm²</td>
+<td>Bone mineral density.</td>
+</tr>
+<tr>
+<td>T-score</td>
+<td><code>t_score</code></td>
+<td>standard deviations</td>
+<td>Bone density compared with a healthy young adult.</td>
+</tr>
+<tr>
+<td>Z-score</td>
+<td><code>z_score</code></td>
+<td>standard deviations</td>
+<td>Bone density compared with people of your age and sex.</td>
+</tr>
+<tr>
+<td>Android fat</td>
+<td><code>android_fat_pct</code></td>
+<td>%</td>
+<td>Fat percentage of the android (abdominal) region.</td>
+</tr>
+<tr>
+<td>Gynoid fat</td>
+<td><code>gynoid_fat_pct</code></td>
+<td>%</td>
+<td>Fat percentage of the gynoid (hip) region. With android fat it gives the A/G ratio.</td>
+</tr>
+<tr>
+<td>Notes</td>
+<td><code>notes</code></td>
+<td>text</td>
+<td>Up to 500 characters.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A scan only calibrates the scale when the scale has a reading of the same kind on the same day. Add your scale readings for the scan day (see <a href="/docs/user/estimates#calibration">Calibration</a>). Deleting a scan removes its calibration.</p>
+<h3 id="auto-fill">Gray values (calculated while typing)</h3>
+<p>While you fill in a form, an empty field shows a gray value when it can be calculated from what you typed. Weight, body fat %, fat mass and fat-free mass calculate from each other: any two give the rest. On the DEXA form, lean mass + bone mass gives fat-free mass. A typed value is never replaced. Gray values are saved with the form unless you type something else. This needs JavaScript; without it the fields stay empty.</p>
+<h2 id="scale-page">Scale readings</h2>
+<p>Page: <code>/u/{id}/scale</code>. A reading is one measurement from a scale or another method. The times are in your <a href="/docs/user/using-the-app#time-zone">time zone</a>. The page shows 100 readings per page, newest first, with <strong>Older</strong> and <strong>Newer</strong> links. The links use the query parameter <code>before</code>, a cursor that marks where the next page starts.</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th>JSON key</th>
+<th>Unit</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Date &amp; time</td>
+<td><code>measured_at</code></td>
+<td>your time zone</td>
+<td>Required, from 1900-01-01 to tomorrow. Several readings on one day (in your time zone) are averaged per method. The API takes an RFC 3339 timestamp.</td>
+</tr>
+<tr>
+<td>Method</td>
+<td><code>method</code></td>
+<td>see below</td>
+<td>Default <code>scale</code>.</td>
+</tr>
+<tr>
+<td>Athlete mode</td>
+<td><code>athlete_mode</code></td>
+<td>yes/no</td>
+<td>Defaults to your Settings default when left out in the API.</td>
+</tr>
+<tr>
+<td>Weight</td>
+<td><code>weight_kg</code></td>
+<td>kg</td>
+<td></td>
+</tr>
+<tr>
+<td>Body fat</td>
+<td><code>fat_ratio_pct</code></td>
+<td>%</td>
+<td></td>
+</tr>
+<tr>
+<td>Fat mass</td>
+<td><code>fat_mass_kg</code></td>
+<td>kg</td>
+<td></td>
+</tr>
+<tr>
+<td>Fat-free mass</td>
+<td><code>fat_free_mass_kg</code></td>
+<td>kg</td>
+<td></td>
+</tr>
+<tr>
+<td>Muscle mass</td>
+<td><code>muscle_mass_kg</code></td>
+<td>kg</td>
+<td>Stored; estimates use fat-free and lean mass instead.</td>
+</tr>
+<tr>
+<td>Hydration</td>
+<td><code>hydration_kg</code></td>
+<td>kg</td>
+<td>Body water. Never corrected.</td>
+</tr>
+<tr>
+<td>Bone mass</td>
+<td><code>bone_mass_kg</code></td>
+<td>kg</td>
+<td>Calibrated against DEXA bone mass.</td>
+</tr>
+<tr>
+<td>Visceral fat</td>
+<td><code>visceral_fat_index</code></td>
+<td>index</td>
+<td>The scale's unitless index. Never corrected.</td>
+</tr>
+<tr>
+<td>Notes</td>
+<td><code>notes</code></td>
+<td>text</td>
+<td>Up to 500 characters.</td>
+</tr>
+<tr>
+<td>Source</td>
+<td><code>source</code></td>
+<td>text</td>
+<td>Where the reading came from: <code>manual</code> (default), <code>withings</code> or any text you send by API.</td>
+</tr>
+<tr>
+<td>External id</td>
+<td><code>external_id</code></td>
+<td>text</td>
+<td>Your own stable id. Readings with an external id are upserted on (source, external id), so repeated imports do not duplicate.</td>
+</tr>
+</tbody>
+</table></div>
+<p>The gray calculated values (see <a href="#auto-fill">above</a>) work on this form too. Deleting a reading cannot be undone.</p>
+<h3 id="measurement-method">Measurement method</h3>
+<p>Each reading records how it was measured. The key goes in the API <code>method</code> field.</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Label</th>
+<th>Default rank</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>hydrostatic</code></td>
+<td>Hydrostatic weighing</td>
+<td>1 (most accurate)</td>
+</tr>
+<tr>
+<td><code>bodpod</code></td>
+<td>BodPod</td>
+<td>2</td>
+</tr>
+<tr>
+<td><code>caliper</code></td>
+<td>Skinfold caliper</td>
+<td>3</td>
+</tr>
+<tr>
+<td><code>scale</code></td>
+<td>Smart scale (Withings, manual)</td>
+<td>4</td>
+</tr>
+<tr>
+<td><code>tape</code></td>
+<td>Tape / Navy formula</td>
+<td>5</td>
+</tr>
+<tr>
+<td><code>visual-ai</code></td>
+<td>Visual AI</td>
+<td>6</td>
+</tr>
+<tr>
+<td><code>manual-entry</code></td>
+<td>Typed into an app (unknown method)</td>
+<td>7 (least trusted)</td>
+</tr>
+</tbody>
+</table></div>
+<p>Readings of different methods are never mixed: each method (and athlete mode) is calibrated against DEXA on its own. See <a href="/docs/user/estimates#method-accuracy">Method accuracy</a>. A re-import never changes the method or athlete mode of a stored reading. A Withings import marks values that were typed into the Withings app (instead of measured by the scale) as <code>manual-entry</code>, so they do not distort the scale's own calibration; rank or ignore that method as you see fit.</p>
+<h3 id="scale-athlete">Athlete mode on a reading</h3>
+<p>Tick <strong>Athlete mode</strong> when the scale was set to its athlete setting (which changes how it estimates fat). The box starts out as your default from Settings. See <a href="/docs/user/estimates#athlete-mode">Athlete mode</a> for the effect.</p>

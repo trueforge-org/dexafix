@@ -1,0 +1,175 @@
+<h1 id="commands">Commands</h1>
+<h2 id="server-commands">Server commands</h2>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>serve</code></td>
+<td>Run everything in one process: pages, API, database and keys.</td>
+</tr>
+<tr>
+<td><code>serve web</code></td>
+<td>Run the frontend of a <a href="/docs/admin/split-deployment">split deployment</a>: pages, static files and the public HTTP, HTTPS and HTTP/3 listeners. No database.</td>
+</tr>
+<tr>
+<td><code>serve api</code></td>
+<td>Run the backend of a split deployment: database, keys, public API, internal API and maintenance.</td>
+</tr>
+<tr>
+<td><code>serve worker</code></td>
+<td>Run a <a href="/docs/admin/workers">worker</a>: it talks to Withings, Strength Level, the sign-in providers and the mail server for the api process. No database.</td>
+</tr>
+<tr>
+<td><code>serve body</code></td>
+<td>Run the <a href="/docs/admin/body-service">body service</a>: scale readings, DEXA scans and estimates, in a database of its own.</td>
+</tr>
+<tr>
+<td><code>healthcheck URL</code></td>
+<td>Make one GET request and exit 0 if the answer is 2xx, 1 otherwise. For the container health check: the image has no shell and no curl. See <a href="/docs/admin/split-deployment#status-and-health-checks">Status and health checks</a>.</td>
+</tr>
+<tr>
+<td><code>secrets service-secret</code></td>
+<td>Print a new service secret of 64 hexadecimal characters for <code>serve web</code> and <code>serve api</code>.</td>
+</tr>
+<tr>
+<td><code>secrets worker-secret</code></td>
+<td>Print a new worker secret of 64 hexadecimal characters for <code>serve api</code> and the workers of one provider (make one for each provider). It must differ from the service secret and from the other providers' secrets.</td>
+</tr>
+<tr>
+<td><code>secrets body-secret</code></td>
+<td>Print a new body secret of 64 hexadecimal characters for <code>serve api</code> and <code>serve body</code>. It must differ from the service and worker secrets.</td>
+</tr>
+<tr>
+<td><code>secrets body-token-key</code></td>
+<td>Print a new private key for the api process to sign body service tokens with. Keep it to that process.</td>
+</tr>
+<tr>
+<td><code>secrets body-token-public --key-file FILE</code></td>
+<td>Print the public key of that private key, for <code>serve body</code>.</td>
+</tr>
+<tr>
+<td><code>secrets init</code></td>
+<td>Create every secret and the mutual TLS certificates of the <a href="/docs/admin/split-deployment#the-recommended-deployment-deploy">Compose deployment</a> in directories you name (<code>--host-dir</code>, <code>--api-dir</code>, <code>--web-dir</code>, <code>--worker-dir PROVIDER=DIR</code> once for each provider, <code>--body-dir</code>, and <code>--db-dir</code>, <code>--dbsetup-dir</code>, <code>--valkey-dir</code> for the database, <code>db-setup</code> and Valkey containers). The api and body directories also get their connection string and encryption key. It never replaces a password, key or shared secret that exists, and makes new certificates at every run (<code>--mtls-days</code>, default 397). <code>--chown uid:gid</code> hands the files to the containers' user. It also makes the password and URL of the optional <a href="/docs/admin/split-deployment#valkey">Valkey</a> server (<code>--valkey-host</code>). This is what the <code>init</code> container runs.</td>
+</tr>
+<tr>
+<td><code>secrets mtls</code></td>
+<td>Create certificates for <a href="/docs/admin/split-deployment#mutual-tls-between-web-and-api">mTLS</a>. With <code>--link body</code>, for the link between the api process and the <a href="/docs/admin/body-service#mutual-tls">body service</a>.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Create the service secret file and keep it private:</p>
+<pre><code class="language-bash">go run . secrets service-secret &gt; service.secret &amp;&amp; chmod 600 service.secret
+</code></pre>
+<p>A group- or world-readable file only logs a warning. See
+<a href="/docs/admin/split-deployment#service-secret">Service secret</a> for rotating it.</p>
+<h2 id="database-commands">Database commands</h2>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>db migrate [up]</code></td>
+<td>Apply all pending migrations. This is the default action.</td>
+</tr>
+<tr>
+<td><code>db migrate down --yes</code></td>
+<td>Roll back the latest migration. Drops tables and their data.</td>
+</tr>
+<tr>
+<td><code>db migrate to N</code></td>
+<td>Migrate up or down to version N. <code>0</code> empties the schema. Going down needs <code>--yes</code>.</td>
+</tr>
+<tr>
+<td><code>db migrate status</code></td>
+<td>List every migration and whether it is applied.</td>
+</tr>
+<tr>
+<td><code>db migrate version</code></td>
+<td>Print the current schema version.</td>
+</tr>
+<tr>
+<td><code>db copy</code></td>
+<td>Copy all data to another database. See below.</td>
+</tr>
+<tr>
+<td><code>db provision</code></td>
+<td>Make the PostgreSQL roles <code>dexafix_owner</code> (owns the database, cannot log in), <code>dexafix</code> and <code>dexafix_body</code>, the database <code>dexafix</code> and the schema <code>body</code> that the <a href="/docs/admin/split-deployment#the-recommended-deployment-deploy">Compose deployment</a> runs on, as the administrator (<code>--admin-dsn-file</code>, <code>--app-password-file</code>, <code>--body-password-file</code>). It can be repeated (two runs at once wait for each other): what exists is kept, the roles lose extra attributes (superuser, create-role and the like) and memberships, a database owned by <code>dexafix</code> goes to <code>dexafix_owner</code>, the passwords are set again (as SCRAM verifiers, so they are not in a logged statement; 16 characters or more are recommended, a shorter one works with a warning), nothing is dropped. PostgreSQL only. This is what the <code>db-setup</code> container runs.</td>
+</tr>
+<tr>
+<td><code>db rekey [--dry-run] [--body]</code></td>
+<td>Re-encrypt all encrypted values with the current key. With <code>--body</code>, the readings and scans of a body service's own database. See <a href="/docs/user/privacy-and-encryption">Encryption</a>.</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>db migrate</code> takes <code>--db-driver</code> and <code>--dsn</code>, with the same environment
+variables as <code>serve</code>. <code>db copy</code> takes <code>--from-driver</code>, <code>--from-dsn</code>,
+<code>--to-driver</code> and <code>--to-dsn</code>, with the variables <code>DEXAFIX_FROM_DSN</code>,
+<code>DEXAFIX_TO_DRIVER</code> and <code>DEXAFIX_TO_DSN</code> (and <code>*_FILE</code> variants for the
+connection strings). <code>--from-dsn</code> falls back to <code>DEXAFIX_DSN</code>.</p>
+<p>Rolling back drops the tables and columns of the migrations it undoes, together
+with their data. <code>db migrate down</code> and <code>db migrate to N</code> for an N below the
+current version therefore refuse to run without <code>--yes</code>; without it they print
+which migrations would be undone. Make a backup first.
+<code>db rekey</code> takes the database and encryption key flags of <code>serve</code>. When a
+<a href="/docs/admin/body-service">body service</a> has its own database, give the <code>db</code>, <code>user</code> and
+<code>settings</code> commands <code>--without-body</code> for the main database.</p>
+<pre><code class="language-bash">go run . db migrate status
+DEXAFIX_DSN=postgres://user:pass@localhost/dexafix go run . db migrate up --db-driver postgres
+go run . db migrate down --yes
+</code></pre>
+<h2 id="account-commands">Account commands</h2>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>user reset-2fa &lt;e-mail&gt;</code></td>
+<td>Remove two-step verification and the recovery codes of that account.</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>user reset-2fa</code> is for lockouts, when nobody who can sign in can turn it off
+from the Admin page. It works on the database directly, so it takes the same
+database and encryption key settings as <code>serve</code>: <code>--db-driver</code>, <code>--dsn</code> (or
+<code>DEXAFIX_DSN</code>, or <code>--dsn-file</code>) and the key flags. The server does not have to
+be stopped, but the change is not written to the audit log. If an administrator
+requires two-step verification, the user sets it up again at the next sign-in.</p>
+<pre><code class="language-bash">DEXAFIX_DSN=postgres://user:pass@localhost/dexafix go run . user reset-2fa you@example.com --db-driver postgres
+</code></pre>
+<h2 id="settings-recovery">Settings recovery</h2>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>settings reset-network</code></td>
+<td>Clear the base URL, the trusted proxies and the PROXY protocol setting.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Use it when a saved value leaves the Admin page unreachable: a base URL for an
+address you no longer use, or a PROXY protocol setting that stops your balancer
+from connecting. It works on the database directly, so it takes the same
+database and encryption key settings as <code>serve</code>: <code>--db-driver</code>, <code>--dsn</code> (or
+<code>DEXAFIX_DSN</code>, or <code>--dsn-file</code>) and the key flags. The change is not written to
+the audit log. Restart the server afterwards, because a running server reads
+these settings at start and when they are saved on the Admin page.</p>
+<pre><code class="language-bash">DEXAFIX_DSN=postgres://user:pass@localhost/dexafix go run . settings reset-network --db-driver postgres
+</code></pre>

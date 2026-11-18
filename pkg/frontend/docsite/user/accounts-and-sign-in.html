@@ -1,0 +1,246 @@
+<h1 id="accounts">Accounts and sign-in</h1>
+<p>Each user has an account and sees only their own data. The first account
+created becomes the administrator. Passwords are hashed with bcrypt. They must
+be 8 characters or more, and at most 72 bytes.</p>
+<p>Creating an account asks for a username, an e-mail address and a password. The
+e-mail address is the account's key, and it is what you sign in with. It is
+compared case-insensitively and stored in lowercase. The username is unique too,
+also ignoring case: 2 to 32 letters, digits, <code>.</code>, <code>_</code> or <code>-</code>, starting with a
+letter or digit. A first and last name can be added on the Settings page. A new
+account made by a provider takes its username from the provider's name field
+(changed to those characters); when it is taken, <code>-2</code>, <code>-3</code> and so on is added.
+Accounts that existed before usernames had to be unique keep their name; those
+that only differed in case got their id added at the upgrade.</p>
+<p><strong>New accounts are closed by default.</strong> Only the very first account on an empty
+server can be created without an invitation. After that nobody can create
+their own account, with a password or on first sign-in through a provider,
+until an administrator opens <strong>New accounts</strong> on the Admin page. Until then an
+administrator adds people from the Users list. Existing accounts keep working.
+This keeps a server that is reachable from the internet from handing out
+accounts by accident.</p>
+<h2 id="data-export">Your data</h2>
+<p>Under <strong>Settings → Your data</strong> every user can download two JSON files, which
+serve a person's right of access and data portability (GDPR articles 15 and 20):</p>
+<ul>
+<li><strong>Settings and personal details</strong>: username, first and last name, e-mail address, role, height,
+settings, permissions, sign-in methods (provider and account id), passkey
+names and dates (never the keys), access token names and prefixes, whether
+two-step verification is on (<code>two_factor.enabled</code>; never the secret or
+recovery codes), whether Withings and Strength Level are connected (and the
+Strength Level e-mail address), and the audit events about the account.</li>
+<li><strong>DEXA scans and scale readings</strong>: everything the user measured, including
+notes.</li>
+</ul>
+<p>Credentials are never included: the files say whether a password, token or
+integration exists, not what it is. The same files are available to scripts at
+<code>/api/v1/users/{id}/export/profile</code> and <code>/api/v1/users/{id}/export/data</code>.
+Every export is itself recorded in the audit log. Deleting a user (Admin page)
+removes all their measurements and settings.</p>
+<h2 id="registration">Signing up</h2>
+<p>The very first account on an empty server can always be created. After that
+sign-up is closed by default. While it is closed nobody can create their own
+account, neither with a password nor on first sign-in through a provider. An
+administrator adds people from the Users list on the Admin page, or opens
+<strong>New accounts</strong> (see <a href="/docs/admin/the-admin-page#admin-signup">New accounts</a>).
+The sign-up form on the home page only appears when sign-up is open and
+password sign-in is on.</p>
+<h2 id="linked-accounts">Sign-in providers and linked accounts</h2>
+<p>Administrators add external providers (OpenID Connect, Sign in with Apple, or
+plain OAuth 2.0; see <a href="/docs/admin/the-admin-page#providers">Sign-in providers</a>).
+Settings lists every configured provider with a <strong>Link</strong> or <strong>Unlink</strong> button.
+Unlinking asks for your current password (or a sign-in from the last 10 minutes
+when you have none). Linking sends you to the provider and back. The card is
+hidden when no provider is configured. Accounts are matched only by the
+provider's account id, never by e-mail address.</p>
+<h2 id="access-tokens">Access tokens</h2>
+<ul>
+<li><strong>What:</strong> a personal token for scripts. It acts as you, on the JSON API only
+(not on the website).</li>
+<li><strong>Format:</strong> starts with <code>dxf_</code>. Send it as <code>Authorization: Bearer dxf_...</code>.</li>
+<li><strong>Fields:</strong> a name (up to 64 characters) and an expiry: 30 days, 90 days
+(default), 1 year, or never.</li>
+<li><strong>Gotchas:</strong> the token is shown once, right after you create it, and only a
+hash is stored. The list shows the first characters, when it was created, last
+used and when it expires. Revoke a token to stop it working at once.</li>
+<li><strong>Changing the password</strong> revokes all your tokens. Tokens are created and
+revoked only on the website, not through the API.</li>
+</ul>
+<p>Your user id is random. It is the number in the address of your pages,
+<code>/u/&lt;id&gt;/</code>. How scripts authenticate is described in
+<a href="/docs/developer/json-api#authentication">JSON API</a>.</p>
+<h2 id="password-login">Password sign-in</h2>
+<p>Password sign-in can be turned off on the Admin page. Providers and access
+tokens keep working. The administrator who turns it off must have another way
+to sign in first: a linked provider or a passkey.</p>
+<p>To recover from a lockout, start the server with password sign-in forced on:</p>
+<pre><code class="language-bash">go run . serve --force-password-login
+</code></pre>
+<p>The same is set with <code>DEXAFIX_FORCE_PASSWORD_LOGIN=true</code>.</p>
+<p>Users who forget their password can get a reset link. See
+<a href="#password-reset">Password reset</a>.</p>
+<h2 id="password-reset">Password reset</h2>
+<p>There are two ways to set a new password without the old one. Both make a link
+that works once.</p>
+<p><strong>An administrator</strong> opens the Users list on the Admin page and chooses <strong>Reset
+link</strong> for the user. The link is shown once on the Admin page and is valid for
+24 hours. Tick <strong>E-mail it</strong> to send it by e-mail instead, when e-mail is set
+up.</p>
+<p><strong>The user</strong> can ask for the link when an SMTP server and a base URL are set on
+the Admin page, under <strong>E-mail</strong> and <strong>Network and retention</strong>, and password
+sign-in is on. The sign-in page then shows <strong>Forgot your password?</strong>. The user
+enters their e-mail address, and the page always gives the same answer, whether
+or not an account with a password uses that address. If one does, a link valid
+for one hour is mailed in the background. The link is built from the base URL
+only, never from the Host header. Accounts that sign in only through a provider
+get no e-mail. In 15 minutes at most 3 e-mails are sent to an address on request of
+one client address (so whoever types your address cannot use up your own tries),
+20 to an address in total, and 10 for one client address.</p>
+<p>Using a link:</p>
+<ul>
+<li>The user chooses a new password of 8 to 72 bytes.</li>
+<li>With two-step verification on, the user also enters a code from the app, or a
+recovery code. A reset never bypasses two-step verification.</li>
+<li>The user is signed out everywhere: all sessions and access tokens are revoked.</li>
+<li>The link stops working once the password or the e-mail address changes.</li>
+<li>A user covered by the administrator's two-step policy who has no second step
+is sent to set one up after the reset.</li>
+</ul>
+<p>The audit log records <code>password_reset_link_created</code>, <code>password_reset_requested</code>,
+<code>password_reset_email_failed</code>, <code>password_reset_completed</code> and
+<code>password_reset_invalid</code>. The e-mail settings have no flags or environment
+variables; see <a href="/docs/admin/configuration#settings-on-the-admin-page">Settings on the Admin page</a>.</p>
+<h2 id="two-step">Two-step verification</h2>
+<p>Two-step verification adds a one-time code from an authenticator app to signing
+in with a password. It protects password sign-in only. Providers (OpenID
+Connect, Sign in with Apple and OAuth 2.0) do not ask for a second step, because
+the provider is trusted to apply its own. Enforce a second factor at the
+provider. Passkey sign-in does not ask for one either; see <a href="#passkeys-doc">Passkeys</a>.</p>
+<h3 id="turning-it-on">Turning it on</h3>
+<p>Only accounts that sign in with a password can turn it on. Under <strong>Settings →
+Two-step verification</strong>, confirm your current password and scan the QR code
+with an authenticator app. You can type the key in instead. Standard apps work:
+codes have 6 digits, change every 30 seconds and use SHA-1. Enter a code from
+the app to confirm.</p>
+<p>Ten recovery codes are then shown, once. Each has the form
+<code>xxxx-xxxx-xxxx-xxxx</code> and works one time, in place of an app code. Store them
+somewhere safe. To get new ones, confirm your password and a code in Settings;
+the old codes stop working.</p>
+<p>Turning it off needs your password and a code, or a recovery code. It is not
+possible while an administrator requires two-step verification.</p>
+<h3 id="signing-in">Signing in</h3>
+<p>After the password, the sign-in page asks for the code on a second page. Enter
+the 6-digit code, or a recovery code, in the same field. The password check is
+kept in a signed cookie for 5 minutes. The cookie is not a session, and it stops
+working as soon as the password is changed or reset.</p>
+<p>A code works once: a code that was already used is refused, even within its
+30 seconds. Five wrong codes for an account within 15 minutes block that
+account's second step. The per-address limit for failed sign-ins applies too.
+A successful second step clears the count.</p>
+<h3 id="administrators">Administrators</h3>
+<p>On the Admin page, <strong>Two-step verification</strong> chooses who must use it: <strong>Nobody</strong>
+(the default), <strong>Administrators</strong> or <strong>Everyone</strong>. People covered by the policy
+who have no second step are asked to set one up at their next password sign-in.
+They scan the QR code, see their recovery codes once, and are then signed in.</p>
+<p>In the Users list, <strong>Remove two-step</strong> turns off a user's two-step verification
+and deletes their recovery codes. Use it when someone lost their device and
+their recovery codes. If no administrator can sign in to do that, use the
+command in <a href="/docs/admin/commands#account-commands">Commands</a>.</p>
+<p>An administrator who has two-step verification on is asked for a code again
+before any Admin page (<code>/admin</code>). The code entered at sign-in counts, so there is
+no second prompt straight after signing in. The step-up lasts 15 minutes, kept
+in a signed cookie tied to the administrator's account and to the session it was
+entered in, so signing out ends it. A recovery code works too. The JSON API does
+not see that cookie: an administrator with two-step verification uses an access
+token there (a session cookie alone is refused).</p>
+<p>If the setting that requires two-step verification cannot be read (the database
+does not answer), a sign-in fails instead of going on without the step.</p>
+<p>The audit log records <code>admin_verified</code> for each step-up, and <code>totp_enabled</code>,
+<code>totp_disabled</code>, <code>totp_removed_by_admin</code>, <code>recovery_codes_regenerated</code>,
+<code>recovery_code_used</code>, <code>second_factor_failed</code> and
+<code>second_factor_throttled</code>. The last two are rate-limited, like failed sign-ins.</p>
+<h2 id="passkeys-doc">Passkeys</h2>
+<p>A passkey (WebAuthn) signs you in without a password. It is a credential kept on
+a device or a security key, and it is unlocked with a fingerprint, a face or a
+PIN. A passkey replaces the password for that sign-in. It is not a second step
+after a password: the device and its unlock already make two factors, so a
+passkey sign-in is never asked for a two-step code, and the
+<a href="#administrators">two-step policy</a> does not apply to it.</p>
+<h3 id="adding-and-managing">Adding and managing</h3>
+<p>Under <strong>Settings → Passkeys</strong>:</p>
+<ul>
+<li><strong>Add a passkey</strong>: give it a name. With a password on the account, confirm
+the current password. Without one, the account needs a sign-in from the last
+10 minutes.</li>
+<li><strong>Rename</strong> a passkey at any time.</li>
+<li><strong>Remove</strong> a passkey: confirm your password. The last passkey cannot be
+removed while it is the only way to sign in. Add another sign-in method first.</li>
+</ul>
+<h3 id="signing-in-with-a-passkey">Signing in with a passkey</h3>
+<p>On the sign-in page, press <strong>Sign in with a passkey</strong>. Browsers that support
+conditional UI also offer your passkey in the suggestions of the e-mail field.
+Passkeys are discoverable, so no e-mail address has to be typed: the passkey
+itself identifies the account.</p>
+<h3 id="requirements">Requirements</h3>
+<ul>
+<li>Browsers offer passkeys only on HTTPS, or on <code>localhost</code>. The Settings section
+says so when neither applies.</li>
+<li>A passkey belongs to the host name the browser used. When a base URL is set,
+that is its host name. The origin includes the port. If the host name changes,
+for example when you move to a new domain, existing passkeys stop working. Add
+them again.</li>
+<li>With the HTTPS listener (see <a href="/docs/admin/reverse-proxy#https-http2-and-http3">HTTPS, HTTP/2 and HTTP/3</a>),
+use its HTTPS address. Behind a proxy that terminates TLS, set an <code>https</code> base
+URL on the Admin page.</li>
+</ul>
+<h3 id="other-places-passkeys-count">Other places passkeys count</h3>
+<ul>
+<li>A passkey sign-in is recorded with the method <code>passkey</code>, which the Users list
+on the Admin page shows in the <strong>Sign-in</strong> column.</li>
+<li>A passkey counts as a sign-in method. It satisfies the rule that you must link
+another sign-in method before you turn off password sign-in on the Admin page,
+and before you unlink your last provider.</li>
+<li>A passkey sign-in counts as the second step for the Admin pages, so no code is
+asked after it.</li>
+<li>Your data export lists passkey names and dates, never the keys. <code>db copy</code>
+copies passkeys too.</li>
+</ul>
+<h3 id="storage-and-security">Storage and security</h3>
+<ul>
+<li>The server stores only the public key and metadata: name, dates and the sign
+counter, as JSON in the <code>passkeys</code> table. Public keys are not secret, so they
+are not encrypted. Each user has a random handle that identifies them to their
+passkeys. It says nothing about the person.</li>
+<li>The sign counter must not go backwards. If it does, the credential may have
+been copied: the sign-in is refused and recorded as <code>passkey_clone_warning</code>.
+Remove that passkey in Settings if you think it was copied.</li>
+<li>The state of a registration or a sign-in is kept in a signed cookie that works
+once and is valid for 5 minutes. Nothing is stored for visitors who are not
+signed in.</li>
+<li>Failed passkey sign-ins count against the per-address limit (see
+<a href="#storage-and-rate-limiting">Storage and rate limiting</a>). They are recorded as
+<code>passkey_login_failed</code>, rate-limited like other failed sign-ins.</li>
+</ul>
+<p>The audit log records <code>passkey_added</code>, <code>passkey_removed</code>, <code>passkey_login_failed</code>
+and <code>passkey_clone_warning</code>.</p>
+<p>Passkeys cannot recover an account. If you lose the device, sign in another way,
+with a password or a provider, or ask an administrator. See
+<a href="/docs/admin/limitations-and-security">Limitations and security</a>.</p>
+<h2 id="storage-and-rate-limiting">Storage and rate limiting</h2>
+<p>Some values are encrypted in the database. See <a href="/docs/user/privacy-and-encryption">Encryption</a> for
+which ones and how to manage the key.</p>
+<p>Failed password sign-ins are counted in the database, so every backend process on it
+shares the counts: 10 per login name from one client address, 100 per login name
+from all addresses together and 60 per client address in 15 minutes, after which
+sign-in answers 429. A login name can therefore be locked for the address that
+typed it wrong, not for its owner at another address. A login name longer than an
+e-mail address (254 characters) is refused at once and counts against the client
+address only. Every sign-up attempt counts against the client address too, and
+hashing a new password (sign-up, a password change, an account added by an
+administrator, a reset) waits for one of the few password slots like a check does:
+a busy server answers 503. The address is the
+visitor's: behind a reverse proxy, set <strong>Trusted proxies</strong> on the Admin page (see
+<a href="/docs/admin/reverse-proxy">Running behind a reverse proxy</a>), or everyone
+shares the proxy's address and its count. Limit sign-in attempts at the proxy as
+well on a public deployment. Form posts are capped at 1 MiB. Writing an answer to a visitor may take two minutes (a slow reader is cut off); an export of all your data gets fifteen. Wrong second-step
+codes are counted separately, as described in
+<a href="#two-step">Two-step verification</a>.</p>

@@ -1,0 +1,23 @@
+<h1 id="getting-started">Getting started</h1>
+<h2 id="quick-start">Quick start</h2>
+<p>Requires the Go version in <code>go.mod</code>.</p>
+<pre><code class="language-bash">go run . serve
+</code></pre>
+<p>Open <a href="http://localhost:8080">http://localhost:8080</a>, create an account and enter some data. The first
+account becomes the administrator. By default the SQLite database is
+<code>dexafix.db</code> in the current directory.</p>
+<p>The first run also creates the encryption key file <code>dexafix.key</code> in the current
+directory, unless <code>DEXAFIX_ENCRYPTION_KEY</code> is set. Back up the key file too. The
+server does not start without it, because the encrypted values cannot be read.
+See <a href="/docs/user/privacy-and-encryption">Encryption</a> for where to keep it.</p>
+<p>To build a binary:</p>
+<pre><code class="language-bash">go build -o dexafix .
+./dexafix serve
+</code></pre>
+<p>The server speaks plain HTTP on the <code>--listen</code> port. To serve HTTPS, with HTTP/2
+and optionally HTTP/3, turn it on under <strong>HTTPS, HTTP/2 and HTTP/3</strong> on the Admin
+page. See <a href="/docs/admin/reverse-proxy#https-http2-and-http3">Running behind a reverse proxy</a>.
+Settings such as the base URL, trusted proxies and the e-mail server are also
+on the Admin page, not in flags: see <a href="/docs/admin/configuration#settings-on-the-admin-page">Configuration</a>.</p>
+<p><code>.goreleaser.yaml</code> builds release binaries for linux, darwin and windows on
+amd64 and arm64.</p>

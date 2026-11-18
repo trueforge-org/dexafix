@@ -1,0 +1,132 @@
+<h1 id="encryption-key-check-and-key-rotation">Encryption key check and key rotation</h1>
+<p>Status: implemented. This note records the problem, the design and the decisions taken while
+implementing it. User-facing instructions are in <a href="/docs/user/privacy-and-encryption">Encryption</a>.</p>
+<h2 id="where-we-were">Where we were</h2>
+<p>Secrets in the database are encrypted with AES-256-GCM (see <code>pkg/store/sqlstore/crypto.go</code>). The key
+comes from <code>DEXAFIX_ENCRYPTION_KEY</code>, or from a file (<code>--encryption-key-file</code>, default <code>dexafix.key</code>
+in the working directory) that <code>serve</code> creates with mode 0600 when it is missing.</p>
+<p>Encrypted: user e-mail addresses, integration data (provider tokens, the Strength Level login),
+server settings (the cookie key and other secrets), the client secrets of sign-in providers and the
+two-step verification secrets (context <code>totp:&lt;user id&gt;</code>) and, since the body data was split off, the
+values and notes of scale readings and DEXA scans (context <code>scale:&lt;user id&gt;:&lt;row_uid&gt;</code> or
+<code>dexa:&lt;user id&gt;:&lt;row_uid&gt;</code>, under a body key derived from the master key with HKDF info
+<code>dexafix body master</code>). Recovery codes are hashed, not encrypted.
+The associated data ties a value to its row, so ciphertext copied to another row fails to open. A key
+derived from the master key (HKDF) produces the HMAC used to look users up by e-mail
+(<code>email_lookup</code>).</p>
+<p>Problems this design solved:</p>
+<ol>
+<li>A missing key file was replaced by a new key, and startup then failed for any database that had
+run before, leaving the generated file behind.</li>
+<li>There was no way to change the key. The master key is also the root of the e-mail lookup.</li>
+<li>The ciphertext did not say which key made it, so a rotation could not tell old from new values
+and a half-finished one could not be resumed.</li>
+</ol>
+<h2 id="key-check">Key check</h2>
+<ul>
+<li><code>app_settings</code> row <code>crypto.check</code> holds the HMAC-SHA256 of the label <code>dexafix key check v1</code> under
+a key derived from the master key with HKDF (info <code>dexafix key check</code>), hex encoded. It reveals
+nothing about the key and is not a ciphertext, so encryption and <code>rekey</code> skip that row.</li>
+<li>On <code>Open</code> with a cipher (not with <code>WithoutMigrate</code>), <code>verifyKey</code> runs before existing values are
+encrypted:
+<ul>
+<li>Check value present and equal to the current key's: fine. Equal to a previous key's: start, log
+a warning that <code>db rekey</code> is due. Equal to none: fail with a message naming the likely causes
+(missing or wrong key file, a different <code>DEXAFIX_ENCRYPTION_KEY</code>).</li>
+<li>Check value absent: if the database holds an encrypted value, open one of them (a wrong key
+fails with the same message; a value under a previous key starts without writing a check). If it
+holds none (a new database, or one that predates encryption with plaintext values), write the
+check. Plaintext values are then encrypted as before, so nothing changes for those databases.</li>
+</ul>
+</li>
+<li><code>resolveEncryptionKey</code> (cmd) takes a <code>hasData</code> function. When the key file is missing and the
+database holds encrypted values (<code>sqlstore.HasEncryptedValues</code>: a <code>LIKE 'enc:%'</code> probe on
+settings, integrations, user e-mail and provider secrets; missing tables count as none) it
+returns an error and creates nothing. A new database still gets a key automatically.</li>
+<li><code>db copy</code> deletes the target's own check row and takes the source's with the ciphertext, so the
+check always matches the values it sits next to. The emptiness check of the target ignores it.</li>
+</ul>
+<h2 id="rotation">Rotation</h2>
+<h3 id="stored-format">Stored format</h3>
+<p><code>enc:v2:&lt;kid&gt;:&lt;payload&gt;</code>, with <code>kid</code> the first 8 hex characters of <code>SHA-256(master key)</code>. The AES
+key for v2 values is derived from the master key with HKDF-SHA256 (info <code>dexafix aes-256-gcm v2</code>),
+so the master key is never used directly as a cipher key. <code>enc:v1:&lt;payload&gt;</code> (AES under the master
+key itself) stays readable: it carries no key id, so the current key is tried first, then each
+previous one. New values are always written as v2 under the current key. The cipher holds one
+current key and any number of previous keys, looked up by id.</p>
+<h3 id="configuration">Configuration</h3>
+<ul>
+<li><code>DEXAFIX_ENCRYPTION_KEY</code> / the key file stay the current key.</li>
+<li><code>DEXAFIX_ENCRYPTION_KEY_PREVIOUS</code> (comma separated) and <code>--encryption-key-previous-file</code>
+(<code>DEXAFIX_ENCRYPTION_KEY_PREVIOUS_FILE</code>; one key per line, blank lines and <code>#</code> comments ignored)
+supply keys that may still open old values. Like the current key they are never accepted as flag
+values. Both <code>serve</code> and <code>db rekey</code> take them.</li>
+</ul>
+<h3 id="dexafix-db-rekey"><code>dexafix db rekey</code></h3>
+<p>Stop the server, back up the database and key, make the new key current and list the old one as
+previous, then run <code>db rekey</code>. In one transaction (SQLite and Postgres alike) it</p>
+<ul>
+<li>opens every encrypted value with whichever key made it and seals it with the current key: user
+e-mail, integrations, settings (including the cookie key), provider client secrets, two-step
+verification secrets. Values that are already <code>v2</code> under the current key are skipped, so the
+command is idempotent and a repeat after a failure picks up where the database stands,</li>
+<li>recomputes <code>email_lookup</code> for every user from the decrypted address under the current lookup key,</li>
+<li>writes the new check value.</li>
+</ul>
+<p>Any value that no configured key can open fails the whole run and nothing is changed. <code>--dry-run</code>
+does the same work without writing and reports the counts per kind (it fails on unreadable values
+too). There is no separate <code>--verify</code>: a dry run that reports zero values to change is that check.</p>
+<h3 id="e-mail-lookup-across-a-rotation">E-mail lookup across a rotation</h3>
+<p>The lookup key derives from the master key, so a rotation changes every <code>email_lookup</code>. Decision:
+keep it simple and correct. <code>db rekey</code> recomputes the lookups in the same transaction as the
+re-encryption. A server that starts between the key change and <code>db rekey</code> also recomputes them on
+startup (the existing e-mail backfill runs on every <code>Open</code>), so e-mail sign-in keeps working in that
+window too. The cost is that the lookup key is not independent of the rotation; a stable, separate
+lookup secret would avoid the rewrite but add a second secret to manage.</p>
+<h3 id="cookie-and-session-keys">Cookie and session keys</h3>
+<p><code>auth.cookie_key</code> is stored encrypted and not derived from the master key, so <code>rekey</code> re-encrypts it
+but does not change it. Sessions stay valid. Session tokens are stored as hashes and are unaffected.</p>
+<h2 id="decision-no-automatic-rotation">Decision: no automatic rotation</h2>
+<p>We considered rotating the key automatically every month and decided against it.</p>
+<ul>
+<li><strong>The operator owns the key.</strong> It comes from an environment variable, a secret store or a file.
+A server that generated a new key could not safely persist it: the file may be read-only, the
+variable lives outside the process, and a key stored next to the database defeats the purpose of
+encrypting it. A rotation the server cannot write down would lock the operator out.</li>
+<li><strong>Rekey is offline.</strong> <code>db rekey</code> runs in one transaction and expects the server to be stopped,
+because a running process keeps its cipher in memory. Doing it on a schedule means either downtime
+every month or a new online mode with its own failure cases.</li>
+<li><strong>There is no usage pressure.</strong> Values are sealed with AES-256-GCM and a random nonce, which is
+safe for roughly 2^32 encryptions under one key. This app writes a handful of encrypted values per
+user, so that limit is far out of reach.</li>
+<li><strong>Rotation does not help against what it is usually meant for.</strong> A leaked old key still opens every
+backup made before the rotation.</li>
+</ul>
+<p>Rotate by hand (see <a href="/docs/admin/encryption-key#rotating-the-key">Rotating the key</a>) when the key may have leaked, when someone with
+access leaves, or when your policy asks for it. The Admin page shows the key id and since when it has
+been in use, as a lower bound: databases created before the key check only learned the date when the
+check was first written. Set the Admin page setting &quot;Remind me to rotate the encryption key after
+(days)&quot; (default empty, no reminder) to show a reminder when the key is older than that many days. The page also says when the database still
+belongs to a previous key and <code>db rekey</code> is due. Neither the reminder nor the notice changes anything.</p>
+<h2 id="open-questions">Open questions</h2>
+<ul>
+<li><code>db rekey</code> while <code>serve</code> runs: the transaction keeps the data safe, but the running process keeps
+its old cipher in memory. Documented as &quot;stop the server&quot;.</li>
+<li>Rotating to a key from a KMS later: the key id and the previous-key list are already the right
+shape; only the source of keys changes.</li>
+<li><code>db copy --rekey</code> (decrypt and re-encrypt while copying) is not implemented; run <code>db rekey</code> on the
+target with the source key as a previous key.</li>
+</ul>
+<h2 id="tests">Tests</h2>
+<ul>
+<li><code>pkg/store/sqlstore/rekey_test.go</code>: seal/open with v1 and v2, previous keys, unknown key id; wrong
+key refused, right key accepted, check value written for fresh databases and for databases that
+lack one; <code>HasEncryptedValues</code>; <code>Rekey</code> across all kinds of encrypted values, read back through a
+store that only knows the new key, e-mail lookup afterwards, idempotence, dry run changes nothing,
+a failing value or cancelled context leaves the database untouched.</li>
+<li><code>cmd/keys_test.go</code>: no key file created when the database holds encrypted values; fresh and
+plaintext databases still get one; previous key parsing; the same-directory warning detection;
+<code>db rekey</code> end to end on a temporary SQLite file.</li>
+<li>Not covered: Postgres. The rekey code uses only portable bun queries and a transaction, but it has
+not been run against Postgres; add it under <code>DEXAFIX_TEST_POSTGRES_DSN</code> in CI.</li>
+</ul>

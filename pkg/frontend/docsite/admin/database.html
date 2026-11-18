@@ -1,0 +1,41 @@
+<h1 id="database">Database</h1>
+<p>The store uses <a href="https://bun.uptrace.dev/">bun</a>, so SQLite and Postgres share one
+query path. The schema is versioned with <a href="https://github.com/pressly/goose">goose</a>
+migrations, embedded per backend in <code>pkg/store/sqlstore/migrations/{sqlite,postgres}/</code>.</p>
+<p><code>serve</code> applies pending migrations on startup. It refuses to start if the
+database schema is newer than the binary, so upgrade DexaFix first.</p>
+<p>A new SQLite database file is created readable by its owner only (mode 0600,
+and SQLite gives its <code>-wal</code> and <code>-shm</code> files the same mode), because it holds
+password hashes and health data. An existing file is left as it is, but a
+warning is logged when other users can read it.</p>
+<p>SQLite connections always enforce foreign keys and wait up to 5 seconds for
+locks, and file databases run in WAL mode, so the DSN needs no pragmas. The
+default DSN is <code>file:dexafix.db</code>.</p>
+<p>The schema starts at a single <code>00001_init</code> migration for 1.0.0. Databases
+created by pre-1.0 builds carry a higher schema version, so 1.0 refuses them
+instead of guessing. Start from a fresh database.</p>
+<p>The <code>db</code> commands (migrate, copy and rekey) are listed on the
+<a href="/docs/admin/commands">Commands</a> page.</p>
+<h2 id="moving-from-sqlite-to-postgres">Moving from SQLite to Postgres</h2>
+<p>Create an empty Postgres database, then copy and start the server:</p>
+<pre><code class="language-bash">export DEXAFIX_TO_DSN=postgres://user:pass@localhost/dexafix
+go run . db copy --from-driver sqlite --from-dsn file:dexafix.db --to-driver postgres
+
+export DEXAFIX_DSN=$DEXAFIX_TO_DSN
+go run . serve --db-driver postgres
+</code></pre>
+<p>The target is migrated to the latest schema and must be empty. Ids are kept,
+and the Postgres sequences are reset so new rows do not collide. The copy is a
+single transaction, so a failure leaves the target untouched. The source is not
+changed, but it must already be fully migrated (<code>db migrate up</code>). It is read in
+one transaction (a snapshot on PostgreSQL); still copy a source that is stopped,
+because what is written after the snapshot is not in the copy.</p>
+<p>Sessions, password reset links, failed-attempt counters, worker jobs and worker
+instances are not copied: people sign in again and the schedules queue new jobs.
+Job schedules (paused ones stay paused) and the single-use values that have not
+expired yet are copied, so a second-step cookie that was used on the source cannot
+be used again on the target.</p>
+<p><code>db copy</code> copies encrypted values unchanged, so the target database needs the
+same encryption key as the source (or run <code>db rekey</code> on the target afterwards,
+with the source key as a previous key). Give the server that starts on the target
+the same <code>DEXAFIX_ENCRYPTION_KEY</code> or key file. See <a href="/docs/user/privacy-and-encryption">Encryption</a>.</p>

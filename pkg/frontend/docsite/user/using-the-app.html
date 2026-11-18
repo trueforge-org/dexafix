@@ -1,0 +1,108 @@
+<h1 id="using-the-app">Using the app</h1>
+<h2 id="getting-started">Getting started</h2>
+<p>DexaFix corrects smart-scale results with DEXA scan results. A smart scale is
+convenient but biased. A DEXA scan is accurate but rare. The app uses the
+difference between the two on the days you have both, and applies it to the
+scale readings in between. You get one estimated value per day.</p>
+<ol>
+<li>Create the first account. On a new server it becomes the administrator.
+After that, new accounts are closed until an administrator allows sign-ups
+(see <a href="/docs/user/accounts-and-sign-in#registration">Signing up</a>).</li>
+<li>Enter your height under Settings (needed for BMI, FMI and LMI).</li>
+<li>Add one or more <a href="/docs/user/scans-and-readings#dexa-page">DEXA scans</a>.</li>
+<li>Add <a href="/docs/user/scans-and-readings#scale-page">scale readings</a> by hand, by the
+<a href="/docs/developer/json-api">JSON API</a>, or by importing them from
+<a href="/docs/user/withings-and-strength-level#withings">Withings</a>. A DEXA scan only
+calibrates a scale if the scale has a reading on the same day.</li>
+<li>Open the estimates page to see the daily table, the chart and the
+calibrations in use.</li>
+</ol>
+<p>Stored readings are never changed. Every estimate is calculated from them, so
+you can change settings at any time and see the result at once. Small <strong>?</strong>
+badges throughout the app link to the matching section of this documentation.</p>
+<h2 id="the-pages">The pages</h2>
+<p>Settings and Admin are in a menu under your first name (or your username, when
+you have not set one) in the header, which also has <strong>Sign out</strong>.</p>
+<ul>
+<li><code>/</code>: the sign-in page. Sign in with an e-mail address and password, with a
+passkey (<strong>Sign in with a passkey</strong>), create an account, or use a provider
+button. A username is unique (ignoring case) and has 2 to 32 letters, digits,
+<code>.</code>, <code>_</code> or <code>-</code>, starting with a letter or digit. You sign in with your
+e-mail address, not your username.</li>
+<li><code>/u/{id}</code>: redirects to the estimates page.</li>
+<li><code>/u/{id}/estimates</code>: one row per day with the estimated values, an overview
+with the latest values and a trend chart, the calibrations in use, and the
+Withings buttons.</li>
+<li><code>/u/{id}/dexa</code>: add and delete DEXA scans. A scan needs a date and at least
+one measurement.</li>
+<li><code>/u/{id}/scale</code>: add and delete readings. Times are in your time zone (Settings). Choose the
+measurement method in the drop-down and tick <strong>Athlete mode</strong> if it applies.</li>
+<li><code>/u/{id}/settings</code>: the athlete-mode default and the accuracy rank of each
+method. The ranking is a drag-to-reorder list, with up and down buttons for
+keyboard use. Without JavaScript it has rank number inputs instead. A Withings
+section connects, imports from and disconnects the user's Withings account. It
+says so when Withings credentials are missing, either on the Admin page or in
+the environment. Also:
+<ul>
+<li><strong>Profile</strong>: username, first name and last name (both optional, up to 64
+characters), e-mail, time zone and height in cm. The e-mail is
+required, because it is how you sign in; changing it asks for your current
+password. The time zone (an IANA name such as <code>Europe/Amsterdam</code>, default
+<code>UTC</code>) decides which calendar day a scale reading belongs to, how the date
+and time of a reading are read and shown, what &quot;today&quot; is and which day a
+Withings import covers. DEXA scans are plain dates and are not moved.</li>
+<li><strong>Access tokens</strong>: create and revoke personal access tokens for the API.</li>
+<li><strong>Linked accounts</strong>: link or unlink sign-in providers (unlinking asks for your current password, or a recent sign-in when you have none).</li>
+<li><strong>Two-step verification</strong>: turn it on or off, and replace your recovery codes.
+See <a href="/docs/user/accounts-and-sign-in#two-step">Two-step verification</a>.</li>
+<li><strong>Passkeys</strong>: add a passkey, rename it or remove it. See
+<a href="/docs/user/accounts-and-sign-in#passkeys-doc">Passkeys</a>.</li>
+<li><strong>Password</strong>: set or change the account's password. Changing it signs out
+the other sessions and revokes all access tokens.</li>
+</ul>
+</li>
+<li><code>/admin</code>: administrators only. See <a href="/docs/admin/the-admin-page">The Admin page</a>.</li>
+</ul>
+<p>Numbers may use a decimal comma. Notes are limited to 500 characters.</p>
+<p>While a scale reading or DEXA scan is being entered, an empty field shows a gray
+value when it can be calculated from what was typed. Weight, body fat %, fat
+mass and fat-free mass calculate from each other: any two give the rest. On the
+DEXA form, lean mass + bone mass gives fat-free mass. A typed value is never
+replaced. Gray values are saved with the form unless a value is typed instead.
+This needs JavaScript; without it the fields stay empty.</p>
+<p>On the estimates page, a <code>DEXA</code> badge marks a value from a DEXA scan, and a
+<code>corr.</code> badge marks a corrected value. Faded values are interpolated or held,
+and a gray <code>est</code> tag in front of the date marks a row with a value
+interpolated between two readings of that field. Hovering a value shows its
+origin, the method and mode it is based on, and the raw reading. The
+calibrations section lists each scan's offsets (DEXA minus the reading on the
+scan day) per method and mode. Days with only a DEXA scan appear too. The
+daily table shows the same period as the chart (30 days, 90 days, 1 year or
+all time, 90 days by default). The Columns menu above the daily table shows
+and hides columns, and the choice is remembered per account.</p>
+<h2 id="settings">Settings</h2>
+<h3 id="profile-settings">Profile</h3>
+<p>Username (unique), first and last name (both optional), e-mail (required, it is
+how you sign in; changing it asks for your current password) and height in cm
+(50 to 280, optional). Height is needed for BMI, FMI and LMI.</p>
+<h3 id="time-zone">Time zone</h3>
+<p>Your IANA time zone, such as <code>Europe/Amsterdam</code> (default <code>UTC</code>). It decides
+which calendar day a scale reading belongs to, how the date and time you type
+for a reading are read and shown, what &quot;today&quot; is, and which day a Withings
+import covers. DEXA scans are plain dates and are not moved by it. Changing it
+re-groups your readings into days, so the estimates are recalculated.</p>
+<h3 id="password">Password</h3>
+<p>Set or change your password (current password required when you have one).
+Shown only while password sign-in is on. Minimum 8 characters, at most 72
+bytes. See <a href="/docs/user/accounts-and-sign-in#password-login">Password sign-in</a>.</p>
+<h3 id="recent-account-activity">Recent account activity</h3>
+<p>The latest security events on your account (time in UTC, event, who did it,
+detail, IP address). If you see something you do not recognise, change your
+password and revoke your access tokens.</p>
+<h2 id="the-footer-terms-and-privacy">The footer, terms and privacy</h2>
+<p>Every page has a footer with links to the documentation, the status page, the
+<strong>Terms of Service</strong> (<code>/terms</code>), the <strong>Privacy Policy</strong> (<code>/privacy</code>), the
+project's sponsor page on <a href="https://opencollective.com/dexafix">Open Collective</a>
+and, as a GitHub icon, the source code (which the AGPL asks a server to offer).
+Signed-in people see a short, dismissible reminder above the estimates that the
+project lives on support; closing it is remembered for 90 days in a cookie.</p>
