@@ -1,4 +1,4 @@
-# Accounts and sign-in
+# Accounts and sign-in {#accounts}
 
 Each user has an account and sees only their own data. The first account
 created becomes the administrator. Passwords are hashed with bcrypt. They must
@@ -22,7 +22,7 @@ administrator adds people from the Users list. Existing accounts keep working.
 This keeps a server that is reachable from the internet from handing out
 accounts by accident.
 
-## Your data
+## Your data {#data-export}
 
 Under **Settings → Your data** every user can download two JSON files, which
 serve a person's right of access and data portability (GDPR articles 15 and 20):
@@ -42,70 +42,44 @@ integration exists, not what it is. The same files are available to scripts at
 Every export is itself recorded in the audit log. Deleting a user (Admin page)
 removes all their measurements and settings.
 
-## Audit log
+## Signing up {#registration}
 
-Security-relevant events are recorded in the database: sign-ins (successful,
-failed and blocked), sign-outs, account creation, profile, password, token and
-sign-in method and two-step verification changes, imports, integration connects,
-data deletions, exports,
-and every administrator action (users, roles, permissions, providers, server
-settings). Each event has a time, who did it, whom it concerned, a short detail
-and the client's IP address. Details never hold passwords, tokens, e-mail
-addresses or login names.
+The very first account on an empty server can always be created. After that
+sign-up is closed by default. While it is closed nobody can create their own
+account, neither with a password nor on first sign-in through a provider. An
+administrator adds people from the Users list on the Admin page, or opens
+**New accounts** (see [New accounts](../admin/09-the-admin-page.md#admin-signup)).
+The sign-up form on the home page only appears when sign-up is open and
+password sign-in is on.
 
-Administrators see the latest 100 events on the Admin page and can read the
-whole log at `GET /api/v1/audit` (`limit`, `before_id` and `user_id` query
-parameters; an administrator with two-step verification on uses an access token
-there, because a session cookie is not enough for the Admin functions). Everyone sees the latest events about their own account in
-Settings, and at `GET /api/v1/users/{id}/audit`.
+## Sign-in providers and linked accounts {#linked-accounts}
 
-Events are deleted after the **Keep the audit log for N days** setting on the
-Admin page (365 by default; `0` keeps them forever). When a user
-is deleted, the IP addresses in the events about them are cleared and the
-events no longer refer to them. Recording an event never fails the request
-that caused it; a failed write is logged.
+Administrators add external providers (OpenID Connect, Sign in with Apple, or
+plain OAuth 2.0; see [Sign-in providers](../admin/09-the-admin-page.md#providers)).
+Settings lists every configured provider with a **Link** or **Unlink** button.
+Unlinking asks for your current password (or a sign-in from the last 10 minutes
+when you have none). Linking sends you to the provider and back. The card is
+hidden when no provider is configured. Accounts are matched only by the
+provider's account id, never by e-mail address.
 
-## Sign-in providers
+## Access tokens {#access-tokens}
 
-Administrators add providers on the Admin page. There are three types:
+- **What:** a personal token for scripts. It acts as you, on the JSON API only
+  (not on the website).
+- **Format:** starts with `dxf_`. Send it as `Authorization: Bearer dxf_...`.
+- **Fields:** a name (up to 64 characters) and an expiry: 30 days, 90 days
+  (default), 1 year, or never.
+- **Gotchas:** the token is shown once, right after you create it, and only a
+  hash is stored. The list shows the first characters, when it was created, last
+  used and when it expires. Revoke a token to stop it working at once.
+- **Changing the password** revokes all your tokens. Tokens are created and
+  revoked only on the website, not through the API.
 
-- **OpenID Connect**, for example Google, with the issuer
-  `https://accounts.google.com`.
-- **Sign in with Apple**. Enter the Services ID as the client ID, then the team
-  ID, the key ID, and the contents of the `.p8` key file as the secret. DexaFix
-  generates Apple's short-lived client secret from these. Apple requires HTTPS.
-- **OAuth 2.0**, with the authorisation, token and userinfo URLs.
+Your user id is random. It is the number in the address of your pages,
+`/u/<id>/`. How scripts authenticate is described in
+[JSON API](../developer/02-json-api.md#authentication).
 
-Register this callback URL with the provider:
-
-```text
-https://your-host/auth/<short name>/callback
-```
-
-The Admin page shows the callback URL for each provider. Replace `<short name>`
-with the provider's short name.
-
-DexaFix connects to a provider from the `oidc` [worker](16-workers.md), never from the api process, so that process needs no route to the internet. A provider on a private
-network address (Authentik or Keycloak on your own LAN, say) is refused until
-you turn on **Allow sign-in providers on private network addresses** under
-**Network and retention**. Cloud metadata and other
-link-local addresses are always refused, and so are redirects to them. When a
-provider cannot be reached, the Admin page says so and, for a refused address,
-how to allow it; what the provider answered is only in the server log. See
-[Outgoing connections](14-limitations-and-security.md#outgoing-connections).
-
-Behind a reverse proxy, forward the `Host` header and set `X-Forwarded-Proto`.
-The callback URL is built from them.
-
-Users link a provider in Settings. With **Create accounts on first sign-in**
-turned on, a login from an unknown account creates a new account. Accounts are
-matched only by the provider's subject, never by e-mail. A new account takes
-the provider's e-mail address on first sign-in, unless the provider marks it
-unverified. If that address is already in use, sign-in is refused. The person
-must then sign in to the existing account and link the provider in Settings.
-Removing a provider also removes its links.
-
-## Password sign-in
+## Password sign-in {#password-login}
 
 Password sign-in can be turned off on the Admin page. Providers and access
 tokens keep working. The administrator who turns it off must have another way
@@ -122,7 +96,7 @@ The same is set with `DEXAFIX_FORCE_PASSWORD_LOGIN=true`.
 Users who forget their password can get a reset link. See
 [Password reset](#password-reset).
 
-## Password reset
+## Password reset {#password-reset}
 
 There are two ways to set a new password without the old one. Both make a link
 that works once.
@@ -156,15 +130,15 @@ Using a link:
 The audit log records `password_reset_link_created`, `password_reset_requested`,
 `password_reset_email_failed`, `password_reset_completed` and
 `password_reset_invalid`. The e-mail settings have no flags or environment
-variables; see [Settings on the Admin page](02-configuration.md#settings-on-the-admin-page).
+variables; see [Settings on the Admin page](../admin/02-configuration.md#settings-on-the-admin-page).
 
-## Two-step verification
+## Two-step verification {#two-step}
 
 Two-step verification adds a one-time code from an authenticator app to signing
 in with a password. It protects password sign-in only. Providers (OpenID
 Connect, Sign in with Apple and OAuth 2.0) do not ask for a second step, because
 the provider is trusted to apply its own. Enforce a second factor at the
-provider. Passkey sign-in does not ask for one either; see [Passkeys](#passkeys).
+provider. Passkey sign-in does not ask for one either; see [Passkeys](#passkeys-doc).
 
 ### Turning it on
 
@@ -204,7 +178,7 @@ They scan the QR code, see their recovery codes once, and are then signed in.
 In the Users list, **Remove two-step** turns off a user's two-step verification
 and deletes their recovery codes. Use it when someone lost their device and
 their recovery codes. If no administrator can sign in to do that, use the
-command in [Commands](05-commands.md#account-commands).
+command in [Commands](../admin/03-commands.md#account-commands).
 
 An administrator who has two-step verification on is asked for a code again
 before any Admin page (`/admin`). The code entered at sign-in counts, so there is
@@ -222,7 +196,7 @@ The audit log records `admin_verified` for each step-up, and `totp_enabled`,
 `recovery_code_used`, `second_factor_failed` and
 `second_factor_throttled`. The last two are rate-limited, like failed sign-ins.
 
-## Passkeys
+## Passkeys {#passkeys-doc}
 
 A passkey (WebAuthn) signs you in without a password. It is a credential kept on
 a device or a security key, and it is unlocked with a fingerprint, a face or a
@@ -257,7 +231,7 @@ itself identifies the account.
   that is its host name. The origin includes the port. If the host name changes,
   for example when you move to a new domain, existing passkeys stop working. Add
   them again.
-- With the HTTPS listener (see [HTTPS, HTTP/2 and HTTP/3](03-reverse-proxy.md#https-http2-and-http3)),
+- With the HTTPS listener (see [HTTPS, HTTP/2 and HTTP/3](../admin/05-reverse-proxy.md#https-http2-and-http3)),
   use its HTTPS address. Behind a proxy that terminates TLS, set an `https` base
   URL on the Admin page.
 
@@ -294,11 +268,11 @@ and `passkey_clone_warning`.
 
 Passkeys cannot recover an account. If you lose the device, sign in another way,
 with a password or a provider, or ask an administrator. See
-[Limitations and security](14-limitations-and-security.md).
+[Limitations and security](../admin/11-limitations-and-security.md).
 
 ## Storage and rate limiting
 
-Some values are encrypted in the database. See [Encryption](08-encryption.md) for
+Some values are encrypted in the database. See [Encryption](05-privacy-and-encryption.md) for
 which ones and how to manage the key.
 
 Failed password sign-ins are counted in the database, so every backend process on it
@@ -312,8 +286,8 @@ hashing a new password (sign-up, a password change, an account added by an
 administrator, a reset) waits for one of the few password slots like a check does:
 a busy server answers 503. The address is the
 visitor's: behind a reverse proxy, set **Trusted proxies** on the Admin page (see
-[Running behind a reverse proxy](03-reverse-proxy.md)), or everyone
+[Running behind a reverse proxy](../admin/05-reverse-proxy.md)), or everyone
 shares the proxy's address and its count. Limit sign-in attempts at the proxy as
 well on a public deployment. Form posts are capped at 1 MiB. Writing an answer to a visitor may take two minutes (a slow reader is cut off); an export of all your data gets fifteen. Wrong second-step
 codes are counted separately, as described in
-[Two-step verification](#two-step-verification).
+[Two-step verification](#two-step).

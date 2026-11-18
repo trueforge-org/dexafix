@@ -1,7 +1,7 @@
 # Encryption key check and key rotation
 
 Status: implemented. This note records the problem, the design and the decisions taken while
-implementing it. User-facing instructions are in [Encryption](08-encryption.md).
+implementing it. User-facing instructions are in [Encryption](../user/05-privacy-and-encryption.md).
 
 ## Where we were
 
@@ -114,7 +114,7 @@ We considered rotating the key automatically every month and decided against it.
 - **Rotation does not help against what it is usually meant for.** A leaked old key still opens every
   backup made before the rotation.
 
-Rotate by hand (see [Rotating the key](08-encryption.md#rotating-the-key)) when the key may have leaked, when someone with
+Rotate by hand (see [Rotating the key](../admin/10-encryption-key.md#rotating-the-key)) when the key may have leaked, when someone with
 access leaves, or when your policy asks for it. The Admin page shows the key id and since when it has
 been in use, as a lower bound: databases created before the key check only learned the date when the
 check was first written. Set the Admin page setting "Remind me to rotate the encryption key after

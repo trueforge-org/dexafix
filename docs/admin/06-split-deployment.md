@@ -39,7 +39,7 @@ that faces visitors holds neither the database nor the keys.
 - web talks to the api process only over the internal listener. Keep that
   listener on a private network.
 - The api process makes no outgoing connection: the sign-in providers and the mail
-  server are reached by the `oidc` and `mail` [workers](16-workers.md). Run both
+  server are reached by the `oidc` and `mail` [workers](07-workers.md). Run both
   in a split deployment, or provider sign-in and e-mail stop (see
   [Upgrading](#upgrading-from-a-version-without-the-oidc-and-mail-workers)).
 - Any number of api processes may share one database, and exactly one of them
@@ -48,9 +48,9 @@ that faces visitors holds neither the database nor the keys.
   [Running more api processes](#running-more-api-processes).
 - Workers (`serve worker`) call the same internal listener with the worker
   secret and reach the outside services for the api process. See
-  [Workers](16-workers.md).
+  [Workers](07-workers.md).
 - The scale readings, DEXA scans and estimates are held by the
-  [body service](17-body-service.md), which runs inside the api process unless
+  [body service](08-body-service.md), which runs inside the api process unless
   you start `serve body` and give `serve api` a `--body-url`.
 - The HTTPS and HTTP/3 listeners belong to web. See
   [TLS and HTTP/3](#tls-and-http3).
@@ -132,7 +132,7 @@ volumes:
 
 This example runs the body service inside the api container. The files in
 `deploy/` run it as a container of its own, with a database role, an encryption
-key and a secret of its own: see [Body service](17-body-service.md).
+key and a secret of its own: see [Body service](08-body-service.md).
 
 The image's default command is `serve`, which runs one process. The split
 needs the `command` line for each service.
@@ -142,7 +142,7 @@ outside yet. Choose one:
 
 - Put a reverse proxy on the `internal` network, and route `/api/` to
   `api:8080` and everything else to `web:8080`. See
-  [Two processes: path split](03-reverse-proxy.md#two-processes-path-split).
+  [Two processes: path split](05-reverse-proxy.md#two-processes-path-split).
 - Set `DEXAFIX_API_UPSTREAM: http://api:8080` on web. Then list the web
   container's address among the trusted proxies on the Admin page. The
   `private` keyword covers Docker's bridge ranges.
@@ -245,7 +245,7 @@ of the other.
 The database image is `ghcr.io/trueforge-org/postgresql` (ContainerForge). It
 runs as uid 568 and keeps its data in `/config/18`, and so do the other images
 of this stack: DexaFix runs as uid 568 too and keeps its data in `/config`. The
-`db-setup` container runs [`dexafix db provision`](05-commands.md) against it,
+`db-setup` container runs [`dexafix db provision`](03-commands.md) against it,
 so the application never runs as the superuser `postgres`. The database
 belongs to `dexafix_owner`, a role that cannot log in, and only the two roles
 below may connect to it, so a compromised api cannot lock the body service out,
@@ -554,7 +554,7 @@ Some limits apply:
   audit events are per process. A Strength Level sync runs on the backend that
   started it. Only the maintenance process generates or renews a self-signed
   certificate; the others load the stored one. See
-  [Limitations and security](14-limitations-and-security.md).
+  [Limitations and security](11-limitations-and-security.md).
 - **Database.** SQLite works for two api processes on one host, in WAL mode,
   but it still serialises writes. Use Postgres when isolation or several
   processes matter.
@@ -568,7 +568,7 @@ once after a save on the Admin page. Web's HTTPS port must be published, for
 example `8443:8443` and `8443:8443/udp` in the Compose example.
 
 The private key crosses the internal link, so the internal link must stay on a
-private network. See [HTTPS, HTTP/2 and HTTP/3](03-reverse-proxy.md#https-http2-and-http3).
+private network. See [HTTPS, HTTP/2 and HTTP/3](05-reverse-proxy.md#https-http2-and-http3).
 
 If web terminates TLS itself, a proxy that only passes TCP cannot split the
 paths. Set `DEXAFIX_API_UPSTREAM` on web, as in the Compose example, or

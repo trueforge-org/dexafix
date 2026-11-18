@@ -20,7 +20,7 @@ to exactly one worker, so you can run as many workers as you like.
 
 - `dexafix serve` runs the built-in workers inside the same process. There is
   nothing to set up.
-- In a [split deployment](15-split-deployment.md) you start workers yourself
+- In a [split deployment](06-split-deployment.md) you start workers yourself
   with `dexafix serve worker`. Without one, jobs stay queued: imports and
   syncs do not start.
 
@@ -74,7 +74,7 @@ own secrets volume. The old `worker_secret` file and the
 
 `--backend-url` is the internal address of the api process, the same one web
 uses. Workers use the internal listener and, if you set it up,
-[mutual TLS](15-split-deployment.md#mutual-tls-between-web-and-api) with the
+[mutual TLS](06-split-deployment.md#mutual-tls-between-web-and-api) with the
 `--backend-ca-file`, `--backend-client-cert-file`, `--backend-client-key-file`
 and `--backend-server-name` flags. Over plain HTTP at an address that is not
 private, the worker logs a warning, because the link carries credentials of
@@ -85,7 +85,7 @@ The Compose deployment in `deploy/` turns mutual TLS on for the workers: its
 its own, from the same CA) and the worker secrets, and gives them to the worker
 containers only. The certificate names its role, and the api process opens the
 workers' door only to a certificate that is not the web process's. See
-[The recommended deployment](15-split-deployment.md#the-recommended-deployment-deploy).
+[The recommended deployment](06-split-deployment.md#the-recommended-deployment-deploy).
 
 | Flag                   | Environment variable          | Default | Description                                                              |
 | ---------------------- | ----------------------------- | ------- | ------------------------------------------------------------------------ |
@@ -179,7 +179,7 @@ process (`--maintenance`), so only one process does it.
 - A worker stops with "the backend refused the worker secret": none of the
   lines in the api process's worker secret file equals the first line of the
   worker's. The file format is the one of the
-  [service secret](15-split-deployment.md#service-secret): web sends the first
+  [service secret](06-split-deployment.md#service-secret): web sends the first
   line, the receiver accepts every line.
 - A kind shows as paused: the circuit breaker or a user's pause fired. The
   reason is on the Workers page.

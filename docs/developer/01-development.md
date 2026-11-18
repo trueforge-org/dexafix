@@ -47,7 +47,7 @@ DEXAFIX_TEST_SPLIT=1 go test ./pkg/backend/... ./pkg/frontend
   body`, or inside the api process through `NewInProcess`): the readings and
   scans, the estimates and their cache (`estcache.go`) and the rules for
   importing readings. It knows nothing about people and trusts only the signed
-  token of the api process. See [Body service](17-body-service.md).
+  token of the api process. See [Body service](../admin/08-body-service.md).
 - `pkg/app/`: package `app`, the single-process mode. `app.New` builds the main
   backend and the frontend over `apiclient.InProcess`; `serve` uses it.
 - `pkg/shared/`: what both sides use, in small packages named by function:
@@ -81,16 +81,7 @@ reuses its `pkg/info`.
 
 ## Guidance for AI coding agents
 
-`AGENTS.md` is the canonical, tool-agnostic instruction file. The rules for one
-area of the code are in `.github/instructions/<area>.instructions.md`, with
-`applyTo:` (read by GitHub Copilot) and `paths:` (read by Claude Code)
-frontmatter. `.claude/rules/` holds a symlink to each of them, plus
-`dexafix.md` with the Claude-only rules, and `.github/copilot-instructions.md`
-is a short summary. When you add an area, add its file, the symlink
-(`ln -s ../../.github/instructions/<area>.instructions.md .claude/rules/`) and
-a row in the table of `AGENTS.md`. `guidance_test.go` fails when the two path
-lists differ, a symlink is missing, a link is broken, or a path no longer
-matches any file after a directory moved.
+The rules for coding agents are in [AGENTS.md](../../AGENTS.md), with the rules for one area of the code in `.github/instructions/`. The documentation rules are in [docs.instructions.md](../../.github/instructions/docs.instructions.md).
 
 ## Schema changes
 

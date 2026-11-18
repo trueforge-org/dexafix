@@ -21,7 +21,7 @@ created by pre-1.0 builds carry a higher schema version, so 1.0 refuses them
 instead of guessing. Start from a fresh database.
 
 The `db` commands (migrate, copy and rekey) are listed on the
-[Commands](05-commands.md) page.
+[Commands](03-commands.md) page.
 
 ## Moving from SQLite to Postgres
 
@@ -51,4 +51,4 @@ be used again on the target.
 `db copy` copies encrypted values unchanged, so the target database needs the
 same encryption key as the source (or run `db rekey` on the target afterwards,
 with the source key as a previous key). Give the server that starts on the target
-the same `DEXAFIX_ENCRYPTION_KEY` or key file. See [Encryption](08-encryption.md).
+the same `DEXAFIX_ENCRYPTION_KEY` or key file. See [Encryption](../user/05-privacy-and-encryption.md).
