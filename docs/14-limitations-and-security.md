@@ -62,15 +62,24 @@
   the service secret that the web and api processes share. A link somebody made
   up has none, and its text is not shown. After a change of the first line of
   the service secret, a message from before it is dropped, which is harmless.
-- **Sign-in providers are fetched with care.** An OpenID discovery runs once at a
-  time for an issuer, outside any lock; a failure is remembered for a minute (and
-  forgotten when an administrator changes the provider); no answer of a provider
-  is read beyond 1 MiB. The state of a provider sign-in is in a `SameSite=Lax`
+- **Sign-in providers are fetched with care, and not by the api process.** An
+  `oidc` [worker](16-workers.md) reads a provider's OpenID discovery document and
+  signing keys and swaps the code of a sign-in; no answer of a provider is read
+  beyond 1 MiB. The api process keeps what the worker found and checks every ID
+  token itself against those keys (signature, issuer, audience, expiry and the
+  nonce of the sign-in), so a token is never trusted because a worker passed it
+  on. A token signed with a key the stored set lacks is refused and queues a
+  refresh of the keys, at most once a minute per provider; the keys are also
+  fetched again once a day. The result of a code exchange is kept encrypted with
+  its job and is cleared as soon as the sign-in has read it. The state of a provider sign-in is in a `SameSite=Lax`
   cookie (only Apple, which answers with a cross-site POST, gets `SameSite=None`),
   and the state of a Withings connection is sealed and good for one callback.
-- **Outgoing connections** of the api process go only to the sign-in providers
-  and the mail server an administrator configured, and are checked when they are
-  made, on the address the name resolved to. Cloud metadata services and other
+- **The api process makes no outgoing connection.** The sign-in providers and
+  the mail server an administrator configured are reached by the `oidc` and
+  `mail` [workers](16-workers.md), so the api container can run without any route
+  to the internet (the Compose file keeps it off the `egress` network). The
+  connections of those workers are checked when they are made, on the address the
+  name resolved to. Cloud metadata services and other
   link-local addresses (`169.254.0.0/16`, `fe80::/10`, `fd00:ec2::254`,
   `100.100.100.200`) are always refused, and so are redirects to them. Private
   networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`,
@@ -80,14 +89,14 @@
   and turning one on does not open the other. A server on the same machine
   (`localhost`) is always allowed. A failed connection is reported to
   the administrator without what the other end answered; the details are in the
-  server log. The api process uses
-  the proxy from `HTTPS_PROXY` and the like for these connections only when private
-  network addresses are allowed for providers, because the check applies to the
-  proxy, not to the address behind it. Everything else
-  that talks to the outside is a [worker](16-workers.md). Workers refuse private,
-  link-local and metadata addresses too, follow at most ten redirects and never
-  one from `https` to `http`; behind a proxy (`HTTPS_PROXY`) they may dial the
-  proxy's private address.
+  server log. The `oidc` worker uses the proxy from `HTTPS_PROXY` and the like
+  only when private network addresses are allowed for providers, because the check
+  applies to the proxy, not to the address behind it. The other workers (Withings,
+  Strength Level) refuse private, link-local and metadata addresses too, follow
+  at most ten redirects and never one from `https` to `http`; behind a proxy
+  (`HTTPS_PROXY`) they may dial the proxy's private address. Without a running
+  `oidc` worker nobody can sign in with a provider, and without a `mail` worker
+  no e-mail goes out; the api process never falls back to connecting itself.
 - **Sensitive changes need a recent sign-in when there is no password.** A user
   who signs in with a provider or a passkey only, or any user while password
   sign-in is off, must have signed in within the last 10 minutes to make a

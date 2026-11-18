@@ -1,11 +1,13 @@
 # Workers
 
 A worker is a process that talks to an outside service (Withings, Strength
-Level) for the api process. Only workers reach the outside. The api process
+Level, the sign-in providers, the mail server) for the api process. Only workers
+reach the outside: the api process makes no outgoing connection. The api process
 keeps the database and decides what is stored. The web process does neither.
 
 ```text
-api (database, queue)  <──  worker  ──>  Withings, Strength Level
+api (database, queue)  <──  worker  ──>  Withings, Strength Level,
+                                          sign-in providers, SMTP server
         internal listener, worker secret
 ```
 
@@ -65,8 +67,9 @@ secret that opens every provider, and the api process logs a warning. Move to on
 file per provider when you can: that is what keeps one compromised worker from
 leasing another provider's jobs.
 In the Compose deployment, run `docker compose pull && docker compose up -d`:
-`init` makes `worker_secret_withings` and `worker_secret_strengthlevel`, and each
-worker container gets its own secrets volume. The old `worker_secret` file and the
+`init` makes `worker_secret_withings`, `worker_secret_strengthlevel`,
+`worker_secret_oidc` and `worker_secret_mail`, and each worker container gets its
+own secrets volume. The old `worker_secret` file and the
 `secrets-worker` volume are no longer used and can be removed.
 
 `--backend-url` is the internal address of the api process, the same one web
@@ -88,7 +91,7 @@ workers' door only to a certificate that is not the web process's. See
 | ---------------------- | ----------------------------- | ------- | ------------------------------------------------------------------------ |
 | `--backend-url`        | `DEXAFIX_BACKEND_URL`         | empty   | Required. Internal address of the api process.                           |
 | `--worker-secret-file` | `DEXAFIX_WORKER_SECRET_FILE`  | empty   | Required. The secret of this worker's provider, one per line (the first is sent). On `serve api` it is `PROVIDERS=FILE`, repeatable, and the variable is `DEXAFIX_WORKER_SECRET_FILES` (separated by `;`). |
-| `--providers`          | `DEXAFIX_WORKER_PROVIDERS`    | empty   | Comma-separated: `strengthlevel`, `withings`. Empty runs all.            |
+| `--providers`          | `DEXAFIX_WORKER_PROVIDERS`    | empty   | Comma-separated: `mail`, `oidc`, `strengthlevel`, `withings`. Empty runs all. |
 | `--concurrency`        | `DEXAFIX_WORKER_CONCURRENCY`  | `2`     | Jobs this process runs at once, from 1 to 64.                            |
 | `--worker-id`          | `DEXAFIX_WORKER_ID`           | random  | Name of this worker on the Admin page.                                   |
 
@@ -99,6 +102,37 @@ ignores them.
 The `deploy/` Compose file runs one worker container per provider, so one that
 hangs or is blocked cannot hold up the other. Scale one with
 `docker compose up -d --scale worker-withings=2`.
+
+## Sign-in providers and e-mail
+
+Two providers are not about a user's data but about the server itself, and the
+api process no longer does them:
+
+| Kind | What the worker does | What comes back |
+| ---- | -------------------- | --------------- |
+| `oidc.discover` | Reads the discovery document and the signing keys of an OpenID Connect or Apple provider. | The endpoints and the key set, which the api process stores. |
+| `oidc.exchange` | Swaps the authorisation code of a sign-in at the token endpoint (and, for plain OAuth 2.0, asks the userinfo endpoint). | The ID token or the userinfo, which the api process verifies and then clears. |
+| `mail.send` | Sends one plain-text message through the SMTP server. | Nothing. |
+
+These jobs belong to no user, because a visitor who signs in is not known yet.
+At most 64 of a kind wait at once, whoever started them. The api process puts
+the client secret (for Apple the short-lived signed JWT, never the private key)
+or the SMTP password in the lease of the job and nowhere else; the message of a
+`mail.send` job, which can hold a reset link, is cleared when the job ends.
+
+- **Run both**, or the matching feature stops. With no `oidc` worker a sign-in
+  with a provider says it is not available and the Admin page cannot save an
+  OpenID Connect provider; with no `mail` worker a reset e-mail is reported as
+  not sent and the test e-mail says no worker is running. There is no fallback to
+  connecting from the api process.
+- Turning these kinds off on the Workers page has the same effect, so do it only
+  to stop them on purpose.
+- The Admin settings **Allow sign-in providers on private network addresses** and
+  **Allow the mail server on a private network address** are read when a job is
+  leased and apply without a restart.
+- An administrator who waits on the page (saving a provider, the test e-mail)
+  waits for the worker for at most 20 and 50 seconds, and the test e-mail is
+  tried once.
 
 ## Settings on the Admin page
 

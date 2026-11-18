@@ -38,6 +38,10 @@ that faces visitors holds neither the database nor the keys.
 
 - web talks to the api process only over the internal listener. Keep that
   listener on a private network.
+- The api process makes no outgoing connection: the sign-in providers and the mail
+  server are reached by the `oidc` and `mail` [workers](16-workers.md). Run both
+  in a split deployment, or provider sign-in and e-mail stop (see
+  [Upgrading](#upgrading-from-a-version-without-the-oidc-and-mail-workers)).
 - Any number of api processes may share one database, and exactly one of them
   runs the maintenance (`--maintenance=false` on the others). The URL web uses
   for the backend may point at a load balancer in front of them. See
@@ -216,7 +220,7 @@ What `init` makes, and where it keeps it:
 | --- | --- | --- |
 | `./secrets/` on the host | The database passwords, the connection strings, the Valkey password and the two encryption keys (`encryption_key`, `body_encryption_key`) | Never: a file that exists is kept |
 | Volume `secrets-api` | The api's connection string and encryption key, the service, worker and body secrets, the body token signing key, the Valkey URL, the api's certificates | The secrets and the key are kept; the certificates are new at every run |
-| Volumes `secrets-web`, `secrets-worker-withings`, `secrets-worker-strengthlevel`, `secrets-body` | Only what that container needs: its shared secret and its certificates (the body service also gets its connection string and encryption key, and the public half of the signing key) | As above |
+| Volumes `secrets-web`, `secrets-worker-withings`, `secrets-worker-strengthlevel`, `secrets-worker-oidc`, `secrets-worker-mail`, `secrets-body` | Only what that container needs: its shared secret and its certificates (the body service also gets its connection string and encryption key, and the public half of the signing key) | As above |
 | Volumes `secrets-db`, `secrets-dbsetup`, `secrets-valkey` | The superuser's password (the database), the administrator's connection string and the two role passwords (`db-setup`), the Valkey password | They follow the files in `./secrets` |
 
 **Back up `./secrets/encryption_key` and `./secrets/body_encryption_key`
@@ -257,6 +261,20 @@ passwords are set again (a database that an earlier version let `dexafix` own go
 `dexafix_owner`, which is all an upgrade needs: run `docker compose up -d` again), so a failed start is mended by the next `up`, and a
 password you changed in `./secrets` takes effect there too.
 
+### Upgrading from a version without the oidc and mail workers
+
+Earlier versions made the connections to the sign-in providers and the SMTP
+server from the api process. Now the `oidc` and `mail` workers do. With the
+Compose file in `deploy/`, `docker compose pull && docker compose up -d` is
+enough: `init` makes their secrets and the two containers start. Without Compose,
+make a worker secret for each (`dexafix secrets worker-secret`), pass
+`oidc=FILE` and `mail=FILE` to `serve api` (`--worker-secret-file`), and start
+`dexafix serve worker --providers oidc` and `--providers mail` with the matching
+secret on a network that can reach the providers and the mail server. Until you
+do, signing in with a provider fails with "not available right now" and e-mails
+are reported as not sent. Password sign-in is not affected. The database gets a
+new migration (`00006`) that lets a job belong to no user.
+
 The Docker daemon may run on another host than your shell (Docker Desktop with a
 dev container). Then a bind mount such as `./secrets` is not visible to it: use a
 normal host, or put `./secrets` in a volume as the test setup in
@@ -278,7 +296,7 @@ household or a small team:
 | `api` | 512 MB | 2 | 256 | Sign-in work (bcrypt) and the pages' data |
 | `body` | 768 MB | 2 | 256 | The estimates: CPU heavy, and it keeps the results of up to 32 users in memory (about 160 MB at most) |
 | `web` | 256 MB | 1 | 256 | Pages and static files |
-| `worker-withings`, `worker-strengthlevel` | 256 MB | 0.5 | 128 | Waiting for jobs and talking to the provider |
+| `worker-withings`, `worker-strengthlevel`, `worker-oidc`, `worker-mail` | 256 MB | 0.5 | 128 | Waiting for jobs and talking to the provider, the sign-in providers or the mail server |
 | `db` | 1 GB | 2 | 512 | PostgreSQL, with up to 20 connections each from `api` and `body` |
 | `valkey` | 512 MB | 1 | 128 | At most 256 MB of data (`--maxmemory`), more while it rewrites its file |
 | `init`, `db-setup` | 128 MB | 0.5 | 64 | They run for a moment and exit |
