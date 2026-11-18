@@ -44,7 +44,7 @@ const (
 type Job struct {
 	ID       int64
 	PublicID string // the identifier used outside the database
-	UserID   int64
+	UserID   int64  // 0: the job belongs to no user (a visitor's sign-in, a refresh of a provider's keys)
 	Kind     string // "<provider>.<action>", such as "withings.import"
 	Origin   string
 	// Interactive jobs are waited for by a person, so they go before background ones of the same priority.
@@ -77,7 +77,7 @@ type Job struct {
 
 // NewJob describes a job to queue.
 type NewJob struct {
-	UserID      int64
+	UserID      int64 // 0: a job that belongs to no user
 	Kind        string
 	Origin      string
 	Interactive bool

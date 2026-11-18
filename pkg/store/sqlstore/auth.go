@@ -89,6 +89,18 @@ func (r providerRow) toModel() models.AuthProvider {
 		Scopes: r.Scopes, SubjectClaim: r.SubjectClaim, NameClaim: r.NameClaim, AllowSignup: r.AllowSignup, CreatedAt: r.CreatedAt}
 }
 
+type providerMetaRow struct {
+	bun.BaseModel `bun:"table:auth_provider_metadata"`
+
+	Slug        string    `bun:"slug,pk"`
+	Issuer      string    `bun:"issuer"`
+	AuthURL     string    `bun:"auth_url"`
+	TokenURL    string    `bun:"token_url"`
+	UserinfoURL string    `bun:"userinfo_url"`
+	JWKS        string    `bun:"jwks"`
+	FetchedAt   time.Time `bun:"fetched_at"`
+}
+
 func notFound(err error) error {
 	if errors.Is(err, sql.ErrNoRows) {
 		return store.ErrNotFound
@@ -560,4 +572,37 @@ func (s *Store) Stats(ctx context.Context) (store.Stats, error) {
 		return st, err
 	}
 	return st, s.keyInfo(ctx, &st)
+}
+
+// ---- provider metadata ----
+
+func (s *Store) GetAuthProviderMetadata(ctx context.Context, slug string) (models.AuthProviderMetadata, error) {
+	var r providerMetaRow
+	if err := s.db.NewSelect().Model(&r).Where("slug = ?", slug).Scan(ctx); err != nil {
+		return models.AuthProviderMetadata{}, notFound(err)
+	}
+	return models.AuthProviderMetadata{Slug: r.Slug, Issuer: r.Issuer, AuthURL: r.AuthURL, TokenURL: r.TokenURL,
+		UserinfoURL: r.UserinfoURL, JWKS: r.JWKS, FetchedAt: r.FetchedAt.UTC()}, nil
+}
+
+// PutAuthProviderMetadata stores the metadata of an existing provider; a slug without a provider is ErrNotFound.
+func (s *Store) PutAuthProviderMetadata(ctx context.Context, m models.AuthProviderMetadata) error {
+	row := providerMetaRow{Slug: m.Slug, Issuer: m.Issuer, AuthURL: m.AuthURL, TokenURL: m.TokenURL,
+		UserinfoURL: m.UserinfoURL, JWKS: m.JWKS, FetchedAt: m.FetchedAt.UTC()}
+	q := s.db.NewInsert().Model(&row).On("CONFLICT (slug) DO UPDATE")
+	for _, col := range []string{"issuer", "auth_url", "token_url", "userinfo_url", "jwks", "fetched_at"} {
+		q = q.Set(col + " = EXCLUDED." + col)
+	}
+	if _, err := q.Exec(ctx); err != nil {
+		if isFK(err) {
+			return store.ErrNotFound
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *Store) DeleteAuthProviderMetadata(ctx context.Context, slug string) error {
+	_, err := s.db.NewDelete().Model((*providerMetaRow)(nil)).Where("slug = ?", slug).Exec(ctx)
+	return err
 }

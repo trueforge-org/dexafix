@@ -255,6 +255,12 @@ type Store interface {
 	// the same slug cannot inherit them.
 	DeleteAuthProvider(ctx context.Context, slug string) error
 
+	// The endpoints and signing keys a worker fetched from an identity provider. ErrNotFound until
+	// a worker has fetched them. DeleteAuthProvider removes them with the provider.
+	GetAuthProviderMetadata(ctx context.Context, slug string) (models.AuthProviderMetadata, error)
+	PutAuthProviderMetadata(ctx context.Context, m models.AuthProviderMetadata) error
+	DeleteAuthProviderMetadata(ctx context.Context, slug string) error
+
 	// AddAuditEvent records an event; ID and At are set.
 	AddAuditEvent(ctx context.Context, e *models.AuditEvent) error
 	// ListAuditEvents returns events newest first.

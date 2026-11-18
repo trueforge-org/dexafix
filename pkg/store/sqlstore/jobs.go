@@ -26,7 +26,7 @@ type jobRow struct {
 
 	ID             int64  `bun:"id,pk,autoincrement"`
 	PublicID       string `bun:"public_id"`
-	UserID         int64  `bun:"user_id"`
+	UserID         *int64 `bun:"user_id"`
 	Kind           string `bun:"kind"`
 	Origin         string `bun:"origin"`
 	Interactive    bool   `bun:"interactive"`
@@ -90,9 +90,24 @@ func inUTC(t *time.Time) *time.Time {
 }
 
 // toModel converts a row; withSecrets also decrypts the payload and the result.
+// userOf and userRef convert between the model's 0 ("no user") and the column's NULL.
+func userOf(id *int64) int64 {
+	if id == nil {
+		return 0
+	}
+	return *id
+}
+
+func userRef(id int64) *int64 {
+	if id == 0 {
+		return nil
+	}
+	return &id
+}
+
 func (s *Store) jobModel(r jobRow, withSecrets bool) (models.Job, error) {
 	j := models.Job{
-		ID: r.ID, PublicID: r.PublicID, UserID: r.UserID, Kind: r.Kind, Origin: r.Origin,
+		ID: r.ID, PublicID: r.PublicID, UserID: userOf(r.UserID), Kind: r.Kind, Origin: r.Origin,
 		Interactive: r.Interactive, DedupeKey: r.DedupeKey, State: r.State,
 		Progress: r.Progress, Error: r.Error, Attempts: r.Attempts, MaxAttempts: r.MaxAttempts,
 		Timeout:   time.Duration(r.TimeoutSeconds) * time.Second,
@@ -134,7 +149,7 @@ func randomID() string {
 // EnqueueJob queues a job. When the job has a DedupeKey and one with that key is already queued or
 // running, nothing is added and that job is returned with created false.
 func (s *Store) EnqueueJob(ctx context.Context, n models.NewJob) (models.Job, bool, error) {
-	if n.UserID <= 0 || n.Kind == "" || n.Origin == "" || n.MaxAttempts < 1 || n.Timeout < time.Second {
+	if n.UserID < 0 || n.Kind == "" || n.Origin == "" || n.MaxAttempts < 1 || n.Timeout < time.Second {
 		return models.Job{}, false, fmt.Errorf("%w: incomplete job", store.ErrInvalid)
 	}
 	id := randomID()
@@ -145,7 +160,7 @@ func (s *Store) EnqueueJob(ctx context.Context, n models.NewJob) (models.Job, bo
 		runAfter = n.RunAfter.UTC()
 	}
 	row := jobRow{
-		PublicID: id, UserID: n.UserID, Kind: n.Kind, Origin: n.Origin, Interactive: n.Interactive,
+		PublicID: id, UserID: userRef(n.UserID), Kind: n.Kind, Origin: n.Origin, Interactive: n.Interactive,
 		DedupeKey: n.DedupeKey, State: models.JobQueued, Payload: payload,
 		MaxAttempts: n.MaxAttempts, TimeoutSeconds: int(n.Timeout / time.Second),
 		CreatedAt: at, RunAfter: runAfter, ExpiresAt: inUTC(n.ExpiresAt), UpdatedAt: at,
@@ -272,11 +287,11 @@ func (s *Store) LeaseJob(ctx context.Context, req models.LeaseRequest, at time.T
 			Timeout int `bun:"timeout_seconds"`
 		}
 		err := s.db.NewSelect().TableExpr("worker_jobs AS j").ColumnExpr("j.id, j.timeout_seconds").
-			Join("JOIN users AS u ON u.id = j.user_id").
+			Join("LEFT JOIN users AS u ON u.id = j.user_id").
 			Where("j.state = ?", models.JobQueued).Where("j.run_after <= ?", at).
 			Where("j.kind IN (?)", bun.In(kinds)).
 			Where("(j.expires_at IS NULL OR j.expires_at > ?)", at).
-			OrderExpr("CASE WHEN u.role = ? THEN 1 ELSE 0 END DESC, u.job_priority DESC, j.interactive DESC, j.run_after, j.id", models.RoleAdmin).
+			OrderExpr("CASE WHEN u.role = ? THEN 1 ELSE 0 END DESC, COALESCE(u.job_priority, 0) DESC, j.interactive DESC, j.run_after, j.id", models.RoleAdmin).
 			Limit(10).Scan(ctx, &cands)
 		if err != nil {
 			return models.Job{}, false, err
@@ -476,7 +491,7 @@ func (s *Store) ReleaseJob(ctx context.Context, publicID, tokenHash string, at, 
 func (s *Store) CancelJob(ctx context.Context, publicID string, userID int64, at time.Time) (models.Job, error) {
 	at = at.UTC()
 	row, err := s.loadJob(ctx, "public_id = ?", publicID)
-	if err != nil || (userID != 0 && row.UserID != userID) {
+	if err != nil || (userID != 0 && userOf(row.UserID) != userID) {
 		return models.Job{}, store.ErrNotFound
 	}
 	if err := s.cancelRows(ctx, at, "id = ?", row.ID); err != nil {

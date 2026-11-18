@@ -171,6 +171,18 @@ type AuthProvider struct {
 	CreatedAt    time.Time
 }
 
+// AuthProviderMetadata is what a worker learned from an identity provider: its endpoints and the
+// keys its ID tokens are signed with. The backend verifies tokens against it and never connects out.
+type AuthProviderMetadata struct {
+	Slug        string
+	Issuer      string
+	AuthURL     string
+	TokenURL    string
+	UserinfoURL string
+	JWKS        string // the provider's JSON Web Key Set, as served
+	FetchedAt   time.Time
+}
+
 // User is a person whose measurements are tracked.
 type User struct {
 	ID int64 `json:"id"`

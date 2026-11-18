@@ -702,3 +702,87 @@ func TestAnIdleWorkerIsNotWrittenOnEveryPoll(t *testing.T) {
 		t.Fatalf("a stale row was not refreshed: last seen %v, want %v", got, late)
 	}
 }
+
+// A job with no user (a visitor's sign-in, a refresh of a provider's keys) is queued, leased and
+// finished like any other, and goes after the jobs of people at the same level.
+func TestAJobWithoutAUserRunsLikeAnyOther(t *testing.T) {
+	s, ctx, us := jobFixture(t, 1)
+	anon := enqueue(t, s, ctx, 0, testKind, true, "anon")
+	if anon.UserID != 0 {
+		t.Fatalf("user of the job = %d", anon.UserID)
+	}
+	named := enqueue(t, s, ctx, us[1].ID, testKind, true, "named")
+	at := time.Now()
+	first, ok := lease(t, s, ctx, at, "w1", testKind)
+	if !ok || first.PublicID != named.PublicID {
+		t.Fatalf("the job of a person goes first, got %+v", first)
+	}
+	second, ok := lease(t, s, ctx, at, "w2", testKind)
+	if !ok || second.PublicID != anon.PublicID || second.UserID != 0 || second.Payload != "secret-anon" {
+		t.Fatalf("second lease = %+v ok=%v", second, ok)
+	}
+	if _, err := s.CompleteJob(ctx, second.PublicID, "tok-w2", models.Completion{Outcome: models.OutcomeOK, Result: "{}"}, at); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CancelJob(ctx, anon.PublicID, us[1].ID, at); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a user cancelled a job that is not theirs: %v", err)
+	}
+	if _, err := s.CancelJob(ctx, anon.PublicID, 0, at); err != nil {
+		t.Fatal(err)
+	}
+	// Deleting a user takes their jobs along and leaves the jobs without a user alone.
+	if err := s.DeleteUser(ctx, us[1].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetJob(ctx, anon.PublicID); err != nil {
+		t.Fatalf("the job without a user went with someone else: %v", err)
+	}
+	if _, err := s.GetJob(ctx, named.PublicID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("the job of a deleted user stayed: %v", err)
+	}
+	if _, _, err := s.EnqueueJob(ctx, models.NewJob{UserID: -1, Kind: testKind, Origin: models.JobOriginUser, MaxAttempts: 1, Timeout: time.Minute}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("a negative user was accepted: %v", err)
+	}
+}
+
+func TestAuthProviderMetadata(t *testing.T) {
+	s := newStore(t)
+	ctx := context.Background()
+	m := models.AuthProviderMetadata{Slug: "idp", Issuer: "https://idp.example", AuthURL: "https://idp.example/auth",
+		TokenURL: "https://idp.example/token", JWKS: `{"keys":[]}`, FetchedAt: time.Now()}
+	if _, err := s.GetAuthProviderMetadata(ctx, "idp"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("metadata before any: %v", err)
+	}
+	if err := s.PutAuthProviderMetadata(ctx, m); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("metadata for a provider that does not exist: %v", err)
+	}
+	if err := s.PutAuthProvider(ctx, models.AuthProvider{Slug: "idp", Label: "IdP", Kind: models.ProviderKindOIDC, ClientID: "c"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, jwks := range []string{`{"keys":[]}`, `{"keys":[{"kid":"2"}]}`} { // the second put replaces the first
+		m.JWKS = jwks
+		if err := s.PutAuthProviderMetadata(ctx, m); err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.GetAuthProviderMetadata(ctx, "idp")
+		if err != nil || got.JWKS != jwks || got.Issuer != m.Issuer || got.TokenURL != m.TokenURL || got.FetchedAt.Sub(m.FetchedAt).Abs() > time.Second {
+			t.Fatalf("got %+v err=%v", got, err)
+		}
+	}
+	if err := s.DeleteAuthProviderMetadata(ctx, "idp"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetAuthProviderMetadata(ctx, "idp"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("metadata after delete: %v", err)
+	}
+	// Removing the provider removes its metadata.
+	if err := s.PutAuthProviderMetadata(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteAuthProvider(ctx, "idp"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetAuthProviderMetadata(ctx, "idp"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("metadata outlived its provider: %v", err)
+	}
+}
