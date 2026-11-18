@@ -9,7 +9,8 @@
 <h2 id="what-ci-checks">What CI checks</h2>
 <p><code>.github/workflows/ci.yaml</code> runs on pushes to <code>main</code>, pull requests, manually and weekly (Monday):</p>
 <ul>
-<li><strong>Lint</strong>: gofmt, <code>go vet</code>, and a <code>go mod tidy</code> check.</li>
+<li><strong>Lint</strong>: gofmt, <code>go vet</code>, a <code>go mod tidy</code> check, and a check that the in-app docs are up to date
+(<code>go generate ./pkg/frontend</code> leaves no diff in <code>pkg/frontend/docsite</code>).</li>
 <li><strong>Test (sqlite)</strong> and <strong>Test (postgres)</strong>: <code>go test -race</code> with coverage. The Postgres run uses a
 service container and <code>DEXAFIX_TEST_POSTGRES_DSN</code>, so the Postgres migrations are exercised.
 Coverage goes to Codecov with the flags <code>unit</code> and <code>postgres</code>.</li>
@@ -21,7 +22,8 @@ Coverage goes to Codecov with the flags <code>unit</code> and <code>postgres</co
 <pre><code class="language-sh">git tag v1.0.0
 git push origin v1.0.0
 </code></pre>
-<p><code>.github/workflows/release.yaml</code> runs GoReleaser and publishes:</p>
+<p><code>.github/workflows/release.yaml</code> runs GoReleaser, whose <code>before</code> hook runs <code>go generate ./pkg/frontend</code> so
+the in-app docs in the binary are regenerated from <code>docs/</code>, and publishes:</p>
 <ul>
 <li>a GitHub release with <code>tar.gz</code> (zip on Windows) archives for linux/darwin/windows on amd64/arm64,
 <code>checksums.txt</code>, a keyless cosign signature of it (<code>checksums.txt.sigstore.json</code>), SBOMs, and a

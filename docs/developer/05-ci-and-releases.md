@@ -14,7 +14,8 @@
 
 `.github/workflows/ci.yaml` runs on pushes to `main`, pull requests, manually and weekly (Monday):
 
-- **Lint**: gofmt, `go vet`, and a `go mod tidy` check.
+- **Lint**: gofmt, `go vet`, a `go mod tidy` check, and a check that the in-app docs are up to date
+  (`go generate ./pkg/frontend` leaves no diff in `pkg/frontend/docsite`).
 - **Test (sqlite)** and **Test (postgres)**: `go test -race` with coverage. The Postgres run uses a
   service container and `DEXAFIX_TEST_POSTGRES_DSN`, so the Postgres migrations are exercised.
   Coverage goes to Codecov with the flags `unit` and `postgres`.
@@ -29,7 +30,8 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
-`.github/workflows/release.yaml` runs GoReleaser and publishes:
+`.github/workflows/release.yaml` runs GoReleaser, whose `before` hook runs `go generate ./pkg/frontend` so
+the in-app docs in the binary are regenerated from `docs/`, and publishes:
 
 - a GitHub release with `tar.gz` (zip on Windows) archives for linux/darwin/windows on amd64/arm64,
   `checksums.txt`, a keyless cosign signature of it (`checksums.txt.sigstore.json`), SBOMs, and a
