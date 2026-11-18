@@ -1,39 +1,6 @@
-# Estimates
+# Estimation details
 
-## How it works
-
-A smart scale is convenient but biased. A DEXA scan is accurate but rare. The
-app uses the difference between the two (the offset) to correct the scale
-between scans.
-
-- Stored readings are never changed. Everything below is calculated from them
-  and kept in a memory cache until the data or the date changes (see
-  [Estimate cache](#estimate-cache)).
-- First the app builds its own per-day series: the most accurate reading of
-  each day, averaged over a centred 7-day window of real readings, with the
-  gaps filled in by straight lines.
-- The offset is `DEXA - the actual reading` on the day of each DEXA scan. The
-  reading is the scale's own value that day, not the smoothed series.
-- On a day with a DEXA value, that value is used.
-- On every other day, the series is corrected by the nearby offset.
-
-Example: one DEXA scan on 2026-03-01 with body fat 18.0 %, while the scale says
-20.0 % every day. The reading on the scan day is 20.0 %, so the offset is
--2.0 percentage points.
-
-| Date       | Scale (%) | Estimate (%) | Origin                   |
-| ---------- | --------- | ------------ | ------------------------ |
-| 2026-03-01 | 20.0      | 18.0         | `dexa`                   |
-| 2026-03-02 | 20.0      | 18.0         | `measured`               |
-| 2026-03-05 | none      | 18.0         | `interpolated` or `held` |
-
-Fat mass and fat-free mass are then calculated from the body fat % and the
-weight on every day with a weight, whether or not a calibration applies. The
-scale's own values are used only when they cannot be calculated.
-
-The full rules are in [Estimation details](#estimation-details).
-
-## Estimation details
+The summary for users is in [Estimates](../user/03-estimates.md).
 
 Estimates are computed from the stored data. The result is cached per user and
 recalculated when the data or the date changes (see
@@ -118,7 +85,7 @@ field is handled on its own.
 
 Computing the estimates walks a user's whole history, so the result is kept in
 memory per user (for the 32 most recently used users), by the
-[body service](17-body-service.md) that computes it. It is reused until
+[body service](../admin/08-body-service.md) that computes it. It is reused until
 something it depends on changes, and there is no list of places that have to
 remember to clear it. The cache is tied to three things:
 

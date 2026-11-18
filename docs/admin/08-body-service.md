@@ -1,7 +1,7 @@
 # Body service
 
 The body service holds the scale readings and the DEXA scans, computes the
-[estimates](09-estimates.md) from them and decides what an import from Withings
+[estimates](../user/03-estimates.md) from them and decides what an import from Withings
 stores. It knows nothing about people: no sign-in, no sessions, no e-mail. The
 api process authenticates people and calls the body service for the data of one
 user at a time.
@@ -37,7 +37,7 @@ database, one backup or one host, not against a break-in to the api process.
 Every call from the api process to the body service carries two things:
 
 - the **body secret**, a file both processes share, like the
-  [service secret](15-split-deployment.md#service-secret);
+  [service secret](06-split-deployment.md#service-secret);
 - a **token** that the api process signs for that one call. It names one user and
   one scope (`read`, `write` or `admin`), lives for 60 seconds at most and carries
   the user's time zone, height, method ranking and athlete default, which the
@@ -51,7 +51,7 @@ user's data. The two processes need clocks within a few seconds of each other.
 ## Start it
 
 The recommended way is the
-[recommended deployment](15-split-deployment.md#the-recommended-deployment-deploy):
+[recommended deployment](06-split-deployment.md#the-recommended-deployment-deploy):
 its `init` container (`dexafix secrets init`) creates everything below, including the
 certificates, and its `db-setup` container (`dexafix db provision`) creates the PostgreSQL roles and schema. To run it by hand, make the secrets first. All of them are files:
 
@@ -123,7 +123,7 @@ the key of the rest.
 
 A body service in its own process has its own `--encryption-key-file` (or
 `DEXAFIX_ENCRYPTION_KEY`), checked against its database like the main key (see
-[Encryption](08-encryption.md)). Use the same file as the api process to get the
+[Encryption](../user/05-privacy-and-encryption.md)). Use the same file as the api process to get the
 same key, or a different one to keep a leak of one key from opening the other. A
 wrong key is refused at start with a message that says so. The body key is a
 second key to back up: **without it the readings and scans cannot be read.**
@@ -178,7 +178,7 @@ of those that are gone. User ids are never reused, so this is safe.
 
 Everything that needs readings, scans or estimates answers with a 503 page or
 status: the Scale, DEXA and Estimates pages, the export, the readings and scans
-endpoints of the [JSON API](11-api.md). A Withings import waits: the worker
+endpoints of the [JSON API](../developer/02-json-api.md). A Withings import waits: the worker
 reports its result again until the body service answers, and the job is not lost.
 Signing in, settings, the admin pages and the rest keep working, and the Admin
 page shows the two counts as "Unavailable".
@@ -196,16 +196,7 @@ migrates its own database on start (`--auto-migrate`, on by default).
 A database from an earlier build is not migrated: the readings and scans are now
 stored in a different form, and a body database of its own starts empty. Export
 each user's data first and import it afterwards (see
-[Accounts and sign-in](07-accounts-and-sign-in.md#your-data)).
-
-## Limits
-
-- A call is not atomic across the two services. An import is applied in steps
-  that can be repeated, so a run that stops half way is finished by running it
-  again.
-- An export is built in memory in the body service and the api process.
-- Backups of the two databases are separate: restore them from the same moment, or
-  readings of users who were deleted in between wait for the next sweep.
+[Accounts and sign-in](../user/02-accounts-and-sign-in.md#data-export)).
 
 ## Troubleshooting
 

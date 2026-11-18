@@ -5,7 +5,7 @@ rejected. Errors have the form `{"error": "..."}`.
 
 The public API is served by the api process's public listener (`--listen`, port
 8080 by default). In `serve` it is the same listener as the web app. In a
-[split deployment](15-split-deployment.md), the reverse proxy sends `/api/` to
+[split deployment](../admin/06-split-deployment.md), the reverse proxy sends `/api/` to
 that listener. `/internal/v1` is the private link between the web process and
 the api process. It is not a supported API and can change between releases.
 
@@ -28,7 +28,7 @@ the API. Such an administrator uses an access token (403 otherwise).
 | POST   | `/users/{id}/scale-readings`    | Add a batch: a JSON array of up to 5000 readings.                                                                                                       |
 | GET    | `/users/{id}/settings`          | Athlete-mode default and method ranking.                                                                                                                |
 | PUT    | `/users/{id}/settings`          | Replace them. Body: `{"athlete_default": true, "method_ranking": [...]}`.                                                                               |
-| GET    | `/users/{id}/export/profile`    | Download settings and personal details (JSON file). See [Your data](07-accounts-and-sign-in.md#your-data).                                                                        |
+| GET    | `/users/{id}/export/profile`    | Download settings and personal details (JSON file). See [Your data](../user/02-accounts-and-sign-in.md#data-export).                                                                        |
 | GET    | `/users/{id}/export/data`       | Download all scans and readings (JSON file).                                                                                                            |
 | GET    | `/users/{id}/audit`             | Events about your account, newest first.                                                                                                                |
 | GET    | `/audit`                        | The whole audit log. Administrators only.                                                                                                               |

@@ -1,31 +1,8 @@
-# Encryption
+# The encryption key
 
-These values are encrypted with AES-256-GCM before they are stored:
+What is encrypted is described in [Encryption and privacy](../user/05-privacy-and-encryption.md). This page is about the key itself: where it comes from, how to keep it and how to rotate it.
 
-- each user's Withings tokens and Strength Level login
-- sign-in provider secrets, including the Apple key
-- Withings application credentials and every other server setting on the Admin
-  page, including the SMTP password and the private key of an uploaded HTTPS
-  certificate
-- e-mail addresses
-- each user's two-step verification secret, the key of their authenticator app
-- each user's scale readings and DEXA scans: the measured values and the notes.
-  The time of a measurement, its source, its method and the user it belongs to
-  stay readable, because the database needs them to find and order rows.
-
-Each value is tied to its row, so copying it to another row makes it unreadable.
-The readings and scans have a key of their own, derived from the encryption key,
-so a value from one group does not open with the key of the other. One key file
-covers both.
-Each e-mail address also gets a keyed hash, derived from the encryption key. The
-hash makes addresses searchable and unique without decrypting them. Passwords,
-access tokens, password reset links and two-step verification recovery codes are
-stored only as hashes. Usernames and first and last names are not encrypted, but addresses are. Height is not
-encrypted by the application either. For that, and for names, use disk or
-database encryption. Without an encryption key nothing is encrypted; readings
-and scans written then are encrypted at the next start with a key.
-
-With a [body service](17-body-service.md) in its own process, the readings and
+With a [body service](08-body-service.md) in its own process, the readings and
 scans have an encryption key of their own: `serve body` takes
 `--encryption-key-file` for it, checks it against its database and refuses a
 wrong one. Rotate it with `db rekey --body`. Back it up like the main key.
@@ -104,7 +81,7 @@ tested on both.
 
 Rotation is manual on purpose: the key belongs to the operator, `db rekey` is
 offline and the AES-GCM usage limits are far out of reach (see
-[key-rotation.md](key-rotation.md)). Rotate when the key may have
+[key-rotation.md](../developer/06-key-rotation-design.md)). Rotate when the key may have
 leaked, when someone with access leaves, or when your policy asks for it. The
 Admin page shows the key id and since when it is in use (at least). To get a
 reminder there, set **Remind me to rotate the encryption key after (days)** under

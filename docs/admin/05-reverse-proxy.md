@@ -38,7 +38,7 @@ What changes when the proxy is trusted:
   as `Host` or as `X-Forwarded-Host`, or you set the base URL.
 - **Passkeys** need HTTPS in the browser, and belong to the host name the browser
   uses. Behind a proxy that terminates TLS, set an `https` base URL. See
-  [Passkeys](07-accounts-and-sign-in.md#passkeys).
+  [Passkeys](../user/02-accounts-and-sign-in.md#passkeys-doc).
 
 For the address, the app reads `X-Forwarded-For` from the right: it skips every
 address that belongs to a trusted proxy, and the first address after that is
@@ -211,7 +211,7 @@ minutes) would lock out everybody together.
 
 ## Two processes: path split
 
-With the [split deployment](15-split-deployment.md), the proxy sends `/api/` to
+With the [split deployment](06-split-deployment.md), the proxy sends `/api/` to
 the api process's public listener and everything else to the web process. Both
 must see the proxy as trusted. Set **Trusted proxies** once on the Admin page:
 it is stored in the database, so it applies to both processes.
@@ -276,4 +276,4 @@ backend dexa_web
 The path split needs a proxy that reads the path, so it must terminate TLS. If
 the web process serves HTTPS itself, a proxy that only passes TCP cannot split
 the paths. Then set `DEXAFIX_API_UPSTREAM` on the web process instead, and see
-[Split deployment](15-split-deployment.md#tls-and-http3).
+[Split deployment](06-split-deployment.md#tls-and-http3).
