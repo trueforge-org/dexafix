@@ -456,6 +456,7 @@ type fakeIdP struct {
 	subject string
 	nonce   string
 	badNone bool
+	kid     string // the key id its tokens name; "k1" (the one in its key set) when empty
 }
 
 func newFakeIdP(t *testing.T) *fakeIdP {
@@ -500,7 +501,11 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 func (idp *fakeIdP) token(t *testing.T, aud, sub, nonce string) string {
 	t.Helper()
 	enc := base64.RawURLEncoding
-	header, _ := json.Marshal(map[string]string{"alg": "RS256", "kid": "k1", "typ": "JWT"})
+	kid := "k1"
+	if idp.kid != "" {
+		kid = idp.kid
+	}
+	header, _ := json.Marshal(map[string]string{"alg": "RS256", "kid": kid, "typ": "JWT"})
 	claims, _ := json.Marshal(map[string]any{"iss": idp.URL, "aud": aud, "sub": sub, "nonce": nonce, "email": sub + "@example.com", "email_verified": true,
 		"name": "User " + sub, "iat": time.Now().Unix(), "exp": time.Now().Add(time.Hour).Unix()})
 	signing := enc.EncodeToString(header) + "." + enc.EncodeToString(claims)

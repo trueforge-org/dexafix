@@ -23,9 +23,11 @@ const (
 	// mailExpiry is how long a queued message may wait for a worker before it is dropped: a reset
 	// link is good for a limited time, and a message that arrives hours late helps nobody.
 	mailExpiry = 15 * time.Minute
-	// mailWait is how long the Admin page waits for the test e-mail; the worker's own limit is 40 s.
-	mailWait = 50 * time.Second
 )
+
+// mailWait is how long the Admin page waits for the test e-mail; the worker's own limit is 40 s. A
+// variable so that tests can shorten it.
+var mailWait = 50 * time.Second
 
 var kindMailSend = workerapi.Kind(providerMail, workerapi.ActionSend)
 
@@ -103,9 +105,8 @@ func (m *jobMailer) Send(ctx context.Context, to, subject, body string) error {
 	}
 	switch {
 	case models.JobActive(j.State):
-		if _, cerr := m.s.store.CancelJob(context.WithoutCancel(ctx), j.PublicID, 0, time.Now()); cerr != nil {
-			return cerr
-		}
+		// If this fails the job expires on its own (mailExpiry); the caller is told it timed out.
+		_, _ = m.s.store.CancelJob(context.WithoutCancel(ctx), j.PublicID, 0, time.Now())
 		return errors.New("the worker did not answer in time")
 	case j.State != models.JobSucceeded:
 		return jobFailed(j)

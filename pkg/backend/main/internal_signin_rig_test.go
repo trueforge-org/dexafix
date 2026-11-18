@@ -95,6 +95,14 @@ func newRigOn(t *testing.T, st store.Store, real *sqlstore.Store, opts ...Option
 func newProviderRig(t *testing.T, opts ...Option) *rig {
 	t.Helper()
 	g := newRig(t, opts...)
+	g.startWorkers()
+	return g
+}
+
+// startWorkers runs the built-in workers against the rig's backend until the test ends.
+func (g *rig) startWorkers() {
+	t := g.t
+	t.Helper()
 	secret := testRandomHex(32)
 	if err := setAllWorkerSecrets(g.b, secret); err != nil {
 		t.Fatal(err)
@@ -108,7 +116,6 @@ func newProviderRig(t *testing.T, opts ...Option) *rig {
 		t.Fatal(err)
 	}
 	t.Cleanup(stop)
-	return g
 }
 
 // do sends one request. A body that is not a string is sent as JSON.

@@ -41,10 +41,7 @@ func keyID(jwt string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("oidc: malformed jwt: %v", err)
 	}
-	if len(jws.Signatures) == 0 { // not reachable: ParseSigned refuses a token without a signature
-		return "", errors.New("oidc: token has no signature")
-	}
-	return jws.Signatures[0].Header.KeyID, nil
+	return jws.Signatures[0].Header.KeyID, nil // ParseSigned refuses a token without a signature
 }
 
 // knows reports whether the set has the key a token names (a token that names none matches any).

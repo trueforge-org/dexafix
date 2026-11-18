@@ -162,6 +162,7 @@ func TestAdminMailsAResetLinkWhenTheServerKnowsItsAddress(t *testing.T) {
 	if code != 200 || !strings.Contains(page, "bob") {
 		t.Fatalf("reset link page: %d", code)
 	}
+	waitFor(t, "the mail worker sending the e-mail", func() bool { return len(mail.received()) == 1 }) // a worker sends it
 	got := mail.received()
 	if len(got) != 1 || !strings.HasPrefix(got[0], "bob@example.com\n") {
 		t.Fatalf("the reset e-mail: %q", got)

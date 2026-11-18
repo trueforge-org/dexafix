@@ -300,3 +300,77 @@ func TestAClientPassedToNewIsUsedForEveryJob(t *testing.T) {
 		t.Fatal("the given client was not used")
 	}
 }
+
+func TestAnAnswerOfExactlyTheLimitIsAccepted(t *testing.T) {
+	f := newFakeIdP(t)
+	const head, tail = `{"keys":[],"pad":"`, `"}`
+	f.keys = head + strings.Repeat("a", maxResponse-len(head)-len(tail)) + tail
+	if len(f.keys) != maxResponse {
+		t.Fatalf("test setup: %d bytes", len(f.keys))
+	}
+	if res, err := New(nil).discover(context.Background(), workerapi.DiscoverPayload{Issuer: f.URL}); err != nil || len(res.JWKS) != maxResponse {
+		t.Fatalf("an answer that is exactly the limit: %v", err)
+	}
+}
+
+func TestDiscoveryFailsCleanlyWhenTheKeysCannotBeFetchedOrAnswerIsCutShort(t *testing.T) {
+	var keys http.HandlerFunc
+	var userinfo string
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/keys" {
+			keys(w, r)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"issuer": srv.URL, "authorization_endpoint": srv.URL + "/auth",
+			"token_endpoint": srv.URL + "/token", "userinfo_endpoint": userinfo, "jwks_uri": srv.URL + "/keys"})
+	}))
+	defer srv.Close()
+	for name, tc := range map[string]struct {
+		keys      http.HandlerFunc
+		permanent bool
+		want      string
+	}{
+		"the key set is not there": {func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) }, true, "signing keys: the provider answered HTTP 404"},
+		"the answer is cut short": {func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Length", "100")
+			w.Write([]byte("abc")) // the connection ends before the promised length
+		}, false, "signing keys: the provider could not be reached"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			keys = tc.keys
+			_, err := New(nil).discover(context.Background(), workerapi.DiscoverPayload{Issuer: srv.URL})
+			retry, _ := runner.IsRetryable(err)
+			if err == nil || runner.IsPermanent(err) != tc.permanent || retry == tc.permanent || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+	// A userinfo endpoint a provider may not have is left out of the result, not an error.
+	keys = func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"keys":[]}`)) }
+	userinfo = "ftp://idp.example.com/userinfo"
+	if res, err := New(nil).discover(context.Background(), workerapi.DiscoverPayload{Issuer: srv.URL}); err != nil || res.UserinfoURL != "" {
+		t.Fatalf("an unusable userinfo endpoint: %+v %v", res, err)
+	}
+}
+
+func TestTheFailuresOfAProviderReadAsSentences(t *testing.T) {
+	if got := (statusError{code: 503}).Error(); got != "HTTP 503" {
+		t.Fatalf("status error %q", got)
+	}
+	if got := (badAnswer{msg: "the answer is too large"}).Error(); got != "the answer is too large" {
+		t.Fatalf("bad answer %q", got)
+	}
+}
+
+func TestADiscoveryDocumentWithoutEndpointsIsRefused(t *testing.T) {
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(map[string]string{"issuer": srv.URL}) // the right issuer, nothing else
+	}))
+	defer srv.Close()
+	_, err := New(nil).discover(context.Background(), workerapi.DiscoverPayload{Issuer: srv.URL})
+	if !runner.IsPermanent(err) || !strings.Contains(err.Error(), "lacks an endpoint") {
+		t.Fatalf("err = %v", err)
+	}
+}

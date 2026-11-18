@@ -29,9 +29,8 @@ import (
 const (
 	providerOIDC = workerapi.ProviderOIDC
 
-	// oidcWait is how long a page waits for a worker; oidcExpiry is how long a queued job stays good
-	// (an authorisation code is short-lived, and nobody waits longer than the page does).
-	oidcWait   = 20 * time.Second
+	// oidcExpiry is how long a queued job stays good (an authorisation code is short-lived, and
+	// nobody waits longer than the page does).
 	oidcExpiry = 25 * time.Second
 
 	// providerKeyCooldown is the least time between two refreshes of one provider's keys that a
@@ -41,6 +40,9 @@ const (
 	// providerKeyMaxAge is how old stored keys may get before the maintenance loop fetches them again.
 	providerKeyMaxAge = 24 * time.Hour
 )
+
+// oidcWait is how long a page waits for a worker. A variable so that tests can shorten it.
+var oidcWait = 20 * time.Second
 
 var (
 	kindOIDCDiscover = workerapi.Kind(providerOIDC, workerapi.ActionDiscover)
@@ -258,9 +260,8 @@ func (s *Backend) runOIDCJob(ctx context.Context, e enqueueSpec) (models.Job, er
 		return j, err
 	}
 	if models.JobActive(j.State) {
-		if _, cerr := s.store.CancelJob(context.WithoutCancel(ctx), j.PublicID, 0, time.Now()); cerr != nil {
-			log.Warn().Err(cerr).Msg("could not cancel a sign-in job nobody waits for")
-		}
+		// If this fails the job expires on its own (oidcExpiry); there is nobody to tell.
+		_, _ = s.store.CancelJob(context.WithoutCancel(ctx), j.PublicID, 0, time.Now())
 		return j, errors.New("the worker did not answer in time")
 	}
 	if j.State != models.JobSucceeded {
@@ -283,9 +284,7 @@ func (s *Backend) discoverIssuer(ctx context.Context, slug, issuer string) (work
 		return workerapi.DiscoverResult{}, err
 	}
 	var res workerapi.DiscoverResult
-	if err := json.Unmarshal([]byte(j.Result), &res); err != nil { // not reachable: applying a result that does not parse failed the job
-		return res, err
-	}
+	must.Do(json.Unmarshal([]byte(j.Result), &res)) // cannot fail: applying a result that does not parse failed the job
 	return res, nil
 }
 
@@ -331,9 +330,7 @@ func (s *Backend) exchangeCode(ctx context.Context, p models.AuthProvider, redir
 		return "", nil, err
 	}
 	var id oidcIdentity
-	if err := json.Unmarshal([]byte(j.Result), &id); err != nil { // not reachable: applying a result that does not parse failed the job
-		return "", nil, err
-	}
+	must.Do(json.Unmarshal([]byte(j.Result), &id)) // cannot fail: applying a result that does not parse failed the job
 	// The identity was for this one callback.
 	if err := s.store.ClearJobResult(context.WithoutCancel(ctx), j.PublicID); err != nil {
 		log.Warn().Err(err).Msg("could not clear a sign-in result")
@@ -341,9 +338,7 @@ func (s *Backend) exchangeCode(ctx context.Context, p models.AuthProvider, redir
 	var claims map[string]any
 	dec := json.NewDecoder(bytes.NewReader(id.Claims))
 	dec.UseNumber()
-	if err := dec.Decode(&claims); err != nil { // not reachable: the claims were checked to be an object
-		return "", nil, err
-	}
+	must.Do(dec.Decode(&claims)) // cannot fail: the claims were checked to be an object
 	return id.Subject, claims, nil
 }
 

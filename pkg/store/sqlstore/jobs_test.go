@@ -785,4 +785,11 @@ func TestAuthProviderMetadata(t *testing.T) {
 	if _, err := s.GetAuthProviderMetadata(ctx, "idp"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("metadata outlived its provider: %v", err)
 	}
+	// A failure that is not a missing provider is reported as it is.
+	if err := s.ExecForTests(ctx, "DROP TABLE auth_provider_metadata"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutAuthProviderMetadata(ctx, m); err == nil || errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("a table that is gone: %v", err)
+	}
 }

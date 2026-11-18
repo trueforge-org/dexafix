@@ -3,6 +3,7 @@ package mainbackend
 import (
 	"bufio"
 	"context"
+	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -197,5 +198,51 @@ func TestTheTestMailWaitsForTheWorkerAndReportsHowItWent(t *testing.T) {
 	}
 	if msg := outboundFailure(err, "Could not send the test e-mail", settingLabelMail); !strings.Contains(msg, settingLabelMail) {
 		t.Fatalf("message %q", msg)
+	}
+}
+
+func TestSendingMailSaysWhyItCouldNotQueueTheMessageOrGetItSent(t *testing.T) {
+	base := newRig(t)
+	faults := &jobFaults{Store: base.st}
+	g := newRigOn(t, faults, base.st)
+	g.useSMTP("127.0.0.1", 2525)
+	ctx := context.Background()
+	m := &jobMailer{s: g.b}
+	send := func(m *jobMailer) error { return m.Send(ctx, "alice@example.com", "Subject", "Body\n") }
+
+	faults.failOn("ListWorkers")
+	if err := send(m); !errors.Is(err, errFlaky) {
+		t.Fatalf("a store that fails: %v", err)
+	}
+	faults.failOn()
+	for name, mm := range map[string]*jobMailer{"queued": m, "waiting": m.waiting()} {
+		if err := send(mm); !errors.Is(err, errNoWorker) {
+			t.Fatalf("%s, with no worker: %v", name, err)
+		}
+	}
+	// A worker is listed but never leases anything: the page stops waiting and the job is dropped.
+	if err := g.st.TouchWorker(ctx, "idle", []string{kindMailSend}, "v", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	old := mailWait
+	mailWait = 150 * time.Millisecond
+	t.Cleanup(func() { mailWait = old })
+	if err := send(m.waiting()); err == nil || !strings.Contains(err.Error(), "did not answer in time") {
+		t.Fatalf("a worker that never comes: %v", err)
+	}
+	if jobs, _ := g.st.ListJobs(ctx, models.JobFilter{Kinds: []string{kindMailSend}, States: []string{models.JobCanceled}}); len(jobs) != 1 {
+		t.Fatalf("%d canceled jobs", len(jobs))
+	}
+	// An administrator who closes the page stops the wait.
+	mailWait = time.Minute
+	gone, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer cancel()
+	if err := m.waiting().Send(gone, "alice@example.com", "Subject", "Body\n"); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("a page that was closed: %v", err)
+	}
+	// The settings are read when the job is leased.
+	faults.failOn("GetSetting")
+	if _, err := leaseMailSend(ctx, g.b, models.Job{Payload: `{"to":"alice@example.com"}`}); !errors.Is(err, errFlaky) {
+		t.Fatalf("settings that cannot be read: %v", err)
 	}
 }

@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/trueforge-org/dexafix/pkg/shared/must"
 	"github.com/trueforge-org/dexafix/pkg/shared/netguard"
 	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
 	"github.com/trueforge-org/dexafix/pkg/workers/runner"
@@ -198,10 +199,7 @@ func (e badAnswer) Error() string { return e.msg }
 
 // get fetches a URL and returns the body, which is at most maxResponse bytes.
 func get(ctx context.Context, c *http.Client, target string, header http.Header) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return nil, badAnswer{"the address is not valid"}
-	}
+	req := must.Value(http.NewRequestWithContext(ctx, http.MethodGet, target, nil)) // cannot fail: validURL parsed the address with the same parser
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "DexaFix")
 	for k, v := range header {

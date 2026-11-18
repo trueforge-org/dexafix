@@ -41,10 +41,7 @@ func New(cfg mailer.Config) (*SMTP, error) {
 	if err != nil {
 		return nil, err
 	}
-	from, err := mail.ParseAddress(cfg.From)
-	if err != nil {
-		return nil, fmt.Errorf("smtp from address: %w", err)
-	}
+	from := must.Value(mail.ParseAddress(cfg.From)) // cannot fail: Check parsed it
 	return &SMTP{cfg: cfg, from: from}, nil
 }
 
