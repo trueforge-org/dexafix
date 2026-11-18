@@ -1,8 +1,9 @@
 # DexaFix as separate containers with PostgreSQL and Valkey: the recommended way to run it when it
 # faces the internet. A flood of requests on the web container cannot take down the api container, a
 # flood of wrong passwords costs the database nothing, and the database is reachable from the api and
-# body containers only. The workers are the only containers that talk to Withings and Strength Level;
-# they have no database and the api container needs no internet. Every link between the containers is
+# body containers only. The workers are the only containers that talk to the outside (Withings,
+# Strength Level, the sign-in providers, the SMTP server); they have no database, and the api
+# container has no way out at all. Every link between the containers is
 # protected twice: by a secret and by mutual TLS.
 #
 #   internet --> web (pages, HTTP/HTTPS/HTTP3, no database)
@@ -13,11 +14,12 @@
 #                  |                  |                    |  body secret + signed tokens |  worker secret + mutual TLS
 #                  |                  |                    |  + mutual TLS                |
 #                  |                  v                    v                              |
-#                  |               valkey (failed sign-ins,  body (scale readings, DEXA   worker-withings, worker-strengthlevel
-#                  |               single-use values,        scans, estimates; own role,  (no database)
+#                  |               valkey (failed sign-ins,  body (scale readings, DEXA   worker-withings, -strengthlevel,
+#                  |               single-use values,        scans, estimates; own role,  -oidc, -mail (no database)
 #                  |               sessions)                 schema, key)                 |  network "egress" (outbound only)
 #                  v                                         |                            v
-#                db (PostgreSQL) <---------------------------+  "data"          Withings, Strength Level
+#                db (PostgreSQL) <---------------------------+  "data"          Withings, Strength Level,
+#                                                                                            sign-in providers, SMTP
 #
 # Start, with the folder for the secrets made first (init runs as the unprivileged user 568:568,
 # like the other containers, so ./secrets must belong to it; a folder that Docker makes by itself
@@ -176,6 +178,8 @@ services:
       - --web-dir=/secrets/web
       - --worker-dir=withings=/secrets/worker-withings
       - --worker-dir=strengthlevel=/secrets/worker-strengthlevel
+      - --worker-dir=oidc=/secrets/worker-oidc
+      - --worker-dir=mail=/secrets/worker-mail
       - --body-dir=/secrets/body
       - --db-dir=/secrets/db
       - --dbsetup-dir=/secrets/dbsetup
@@ -187,6 +191,8 @@ services:
       - secrets-web:/secrets/web
       - secrets-worker-withings:/secrets/worker-withings
       - secrets-worker-strengthlevel:/secrets/worker-strengthlevel
+      - secrets-worker-oidc:/secrets/worker-oidc
+      - secrets-worker-mail:/secrets/worker-mail
       - secrets-body:/secrets/body
       - secrets-db:/secrets/db
       - secrets-dbsetup:/secrets/dbsetup
@@ -287,7 +293,7 @@ services:
       DEXAFIX_VALKEY_URL_FILE: /secrets/api/valkey_url
       DEXAFIX_SERVICE_SECRET_FILE: /secrets/api/service_secret
       # One secret per provider: the workers of one provider cannot lease the jobs of another.
-      DEXAFIX_WORKER_SECRET_FILES: "withings=/secrets/api/worker_secret_withings;strengthlevel=/secrets/api/worker_secret_strengthlevel"
+      DEXAFIX_WORKER_SECRET_FILES: "withings=/secrets/api/worker_secret_withings;strengthlevel=/secrets/api/worker_secret_strengthlevel;oidc=/secrets/api/worker_secret_oidc;mail=/secrets/api/worker_secret_mail"
       DEXAFIX_INTERNAL_LISTEN: ":8081"
       DEXAFIX_HEALTH_LISTEN: "127.0.0.1:8083"
       # Mutual TLS for web and the workers: only a client certificate from init's CA gets in.
@@ -433,6 +439,41 @@ services:
         condition: service_healthy
     networks: [link, egress]
 
+  # The sign-in providers (OpenID Connect, Apple, OAuth 2.0) and the SMTP server are reached by
+  # these two, so the api container has no way out at all. Without worker-oidc nobody can sign in with
+  # a provider, and without worker-mail no e-mail goes out (reset links, the test e-mail).
+  worker-oidc:
+    <<: [*hardened, *limits-worker, *logging]
+    image: *image
+    command: ["serve", "worker", "--providers", "oidc"]
+    environment: *worker-env
+    volumes:
+      - secrets-worker-oidc:/secrets/worker:ro
+    healthcheck:
+      <<: *health
+      test: ["CMD", "/dexafix", "healthcheck", "http://127.0.0.1:8083/readyz"]
+    depends_on:
+      <<: *after-init
+      api:
+        condition: service_healthy
+    networks: [link, egress]
+
+  worker-mail:
+    <<: [*hardened, *limits-worker, *logging]
+    image: *image
+    command: ["serve", "worker", "--providers", "mail"]
+    environment: *worker-env
+    volumes:
+      - secrets-worker-mail:/secrets/worker:ro
+    healthcheck:
+      <<: *health
+      test: ["CMD", "/dexafix", "healthcheck", "http://127.0.0.1:8083/readyz"]
+    depends_on:
+      <<: *after-init
+      api:
+        condition: service_healthy
+    networks: [link, egress]
+
 networks:
   data:
     internal: true # the database has no way out and no way in except through api, body and db-setup
@@ -443,7 +484,7 @@ networks:
   bodylink:
     internal: true # the api and the body service only: web and the workers cannot reach the readings
   public: {}
-  egress: {} # outbound only: the workers reach Withings and Strength Level through it; nothing is published
+  egress: {} # outbound only: the workers reach Withings, Strength Level, the sign-in providers and the mail server through it; nothing is published
 
 volumes:
   db-data: {}
@@ -453,6 +494,8 @@ volumes:
   secrets-web: {}
   secrets-worker-withings: {}
   secrets-worker-strengthlevel: {}
+  secrets-worker-oidc: {}
+  secrets-worker-mail: {}
   secrets-body: {}
   secrets-db: {}
   secrets-dbsetup: {}

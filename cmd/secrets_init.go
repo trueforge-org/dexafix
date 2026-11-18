@@ -488,7 +488,7 @@ mutual TLS certificates.
                  certificates (mtls_*, and body_mtls_* for the link to the body service), and
                  valkey_url (made from valkey_password in --host-dir, for the optional Valkey server)
   --web-dir      service_secret and the web process's client certificate
-  --worker-dir   PROVIDER=DIR, once for each provider (withings=..., strengthlevel=...): worker_secret
+  --worker-dir   PROVIDER=DIR, once for each provider (withings=..., strengthlevel=..., oidc=..., mail=...): worker_secret
                  (that provider's own; the api directory holds worker_secret_<provider> for each) and
                  the same client certificate. Give each provider's workers a directory of their own, so
                  a compromised worker cannot read the secret of another provider. A plain
@@ -517,7 +517,8 @@ run init at least once a year; the Compose file runs it at every start). The pro
 certificate files again within 30 seconds, so they need no restart.`,
 	Example: `# on the host, for a deployment that is not Compose:
 dexafix secrets init --host-dir ./secrets/host --api-dir ./secrets/api --web-dir ./secrets/web \
-  --worker-dir withings=./secrets/worker-withings --worker-dir strengthlevel=./secrets/worker-strengthlevel --body-dir ./secrets/body
+  --worker-dir withings=./secrets/worker-withings --worker-dir strengthlevel=./secrets/worker-strengthlevel \
+  --worker-dir oidc=./secrets/worker-oidc --worker-dir mail=./secrets/worker-mail --body-dir ./secrets/body
 # as the Compose init container: it starts by itself at every docker compose up`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
