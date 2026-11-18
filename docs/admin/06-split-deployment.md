@@ -24,7 +24,7 @@ that faces visitors holds neither the database nor the keys.
                       visitors
                          |
                          v
-        reverse proxy (path split, see 03-reverse-proxy.md)
+        reverse proxy (path split, see 05-reverse-proxy.md)
               |                              |
         /api/ |                              | everything else
               v                              v

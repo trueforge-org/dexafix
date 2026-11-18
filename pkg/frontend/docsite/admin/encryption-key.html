@@ -71,7 +71,7 @@ stopped. It is the same code in one transaction on SQLite and PostgreSQL, and is
 tested on both.</p>
 <p>Rotation is manual on purpose: the key belongs to the operator, <code>db rekey</code> is
 offline and the AES-GCM usage limits are far out of reach (see
-<a href="/docs/developer/key-rotation-design">key-rotation.md</a>). Rotate when the key may have
+<a href="/docs/developer/key-rotation-design">Key rotation design</a>). Rotate when the key may have
 leaked, when someone with access leaves, or when your policy asks for it. The
 Admin page shows the key id and since when it is in use (at least). To get a
 reminder there, set <strong>Remind me to rotate the encryption key after (days)</strong> under

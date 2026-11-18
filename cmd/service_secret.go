@@ -147,7 +147,7 @@ func loadWorkerSecretGroups(entries []string) ([]mainbackend.WorkerSecrets, []st
 			// every provider. That still works, so an upgrade does not stop the workers, but it is the
 			// configuration the per-provider secrets exist to replace.
 			log.Warn().Str("file", e).Msg("--worker-secret-file without PROVIDERS= opens every provider's jobs to one secret: " +
-				"give each provider its own file (withings=FILE --worker-secret-file strengthlevel=FILE), see docs/16-workers.md")
+				"give each provider its own file (withings=FILE --worker-secret-file strengthlevel=FILE), see docs/admin/07-workers.md")
 			names, path, ok = strings.Join(builtin.Names(), "+"), e, true
 		}
 		if !ok || names == "" || path == "" {

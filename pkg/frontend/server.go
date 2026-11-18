@@ -22,7 +22,7 @@ import (
 //go:embed templates static
 var assets embed.FS
 
-var pages = []string{"index.html", "dexa.html", "scale.html", "estimates.html", "settings.html", "admin.html", "adminworkers.html", "status.html", "docs.html", "terms.html", "privacy.html", "twofactor.html", "reset.html"}
+var pages = []string{"index.html", "dexa.html", "scale.html", "estimates.html", "settings.html", "admin.html", "adminworkers.html", "status.html", "docs.html", "docsindex.html", "terms.html", "privacy.html", "twofactor.html", "reset.html"}
 
 // assetURL returns the cache-busting URL of an embedded static file.
 func (s *Frontend) assetURL(name string) string {
@@ -39,7 +39,8 @@ func (s *Frontend) Handler() http.Handler {
 	mux.Handle("GET /static/", staticHandler(static, s.assetVer))
 
 	mux.HandleFunc("GET /{$}", s.index)
-	mux.HandleFunc("GET /docs", s.docsPage)
+	mux.HandleFunc("GET /docs", s.docsLanding)
+	mux.HandleFunc("GET /docs/{section}/{page}", s.docsArticle)
 	s.legalRoutes(mux)
 	s.statusRoutes(mux)
 	s.authRoutes(mux)
@@ -132,6 +133,7 @@ type pageData struct {
 	Status        *statusView            // the status page
 	Admin         *adminView             // admin page
 	Track         *trackingView          // optional analytics and ads: set for a public page only
+	Docs          *docsView              // the documentation pages
 }
 
 func (s *Frontend) render(w http.ResponseWriter, page string, status int, data pageData) {

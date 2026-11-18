@@ -42,6 +42,7 @@ type Frontend struct {
 
 	api       *apiclient.Client // how the page handlers reach the backend
 	tmpl      map[string]*template.Template
+	docs      *docsIndex        // the generated documentation, see docs.go
 	assetVer  map[string]string // content hash per static file, for cache-busting URLs
 	proxy     edge.Proxy
 	unlimited bool // the combined process has no request limits of its own
@@ -91,12 +92,14 @@ func NewFrontend(api *apiclient.Client) (*Frontend, error) {
 		bg:   jobs.New(),
 		api:  api,
 		tmpl: map[string]*template.Template{},
+		docs: loadDocs(),
 	}
 	static, _ := fs.Sub(assets, "static")
 	s.assetVer = staticVersions(static)
 	funcs := template.FuncMap{
 		"initial":    initial,
-		"help":       help,
+		"help":       s.docs.help,
+		"docsURL":    s.docs.url,
 		"timezones":  func() []string { return timezones.Common },
 		"asset":      s.assetURL,
 		"repoURL":    func() string { return repoURL },

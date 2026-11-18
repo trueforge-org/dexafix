@@ -917,6 +917,7 @@
     "providers": "admin/the-admin-page",
     "registration": "user/accounts-and-sign-in",
     "resync-day": "user/estimates",
+    "rotating-the-key": "admin/encryption-key",
     "scale-athlete": "user/scans-and-readings",
     "scale-page": "user/scans-and-readings",
     "strengthlevel": "user/withings-and-strength-level",

@@ -43,7 +43,7 @@ ENV DEXAFIX_LISTEN=:8080 \
 # readings, scans and estimates can run as `serve body` too (8082), with a database of its own.
 # 8081 is the internal API and 8082 the body service: never publish them, keep them on a private
 # network. 8081 is only used by `serve api`, 8082 only by `serve body`, see
-# docs/15-split-deployment.md, docs/16-workers.md and docs/17-body-service.md.
+# docs/admin/06-split-deployment.md, docs/admin/07-workers.md and docs/admin/08-body-service.md.
 EXPOSE 8080 8081 8082 8443 8443/udp
 ENTRYPOINT ["/dexafix"]
 CMD ["serve"]
