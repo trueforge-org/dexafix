@@ -31,7 +31,7 @@ Leases with heartbeats (a worker that stops is reaped), a lease token on every c
 4. **Backend descriptor** `pkg/backend/main/workerprovider_<name>.go`: a `workerProvider` with its `kindSpec`s (defaults for retries, time limit, schedule, circuit breaker; options sent to workers), `Lease` (reads and decrypts what the worker needs), `Apply` (validates and stores), `Credentials` (stores renewed credentials), `ScheduleFor` (users to run on a schedule) and, for OAuth, `OAuth` (configured? authorize URL). Add it to `NewBackend`. The Admin page lists it, the scheduler runs it and the settings keys (`workers.<kind>.*`) exist without further code.
 5. **Pages** that connect, import or export call `enqueueJob`/`waitJob` from the descriptor; they never call the outside service.
 6. **Tests**: the worker against a fake server (no network), the descriptor's `Lease`/`Apply` including a bad result, and a flow through the real queue (`workers_test.go` has a demo provider).
-7. **Docs** (`docs/16-workers.md`, the in-app copy) and this file if a rule changes.
+7. **Docs** (`docs/admin/07-workers.md`; run `go generate ./pkg/frontend`) and this file if a rule changes.
 
 ## Tests
 

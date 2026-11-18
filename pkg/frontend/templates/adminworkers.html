@@ -10,7 +10,7 @@
     <thead><tr><th>Worker</th><th>Runs</th><th>Version</th><th>Last asked for work (UTC)</th></tr></thead>
     <tbody>{{range .Workers}}<tr><td>{{.ID}}</td><td>{{range $i, $k := .Kinds}}{{if $i}}, {{end}}{{$k}}{{end}}</td><td>{{.Version}}</td><td>{{.LastSeen}}</td></tr>{{end}}</tbody>
   </table></div>
-  {{else}}<p class="notice" role="status">No worker has asked for work lately. Imports and syncs wait until one starts, and the buttons tell people so. See <a href="/docs#workers">Workers</a> in the documentation.</p>{{end}}
+  {{else}}<p class="notice" role="status">No worker has asked for work lately. Imports and syncs wait until one starts, and the buttons tell people so. See <a href="{{docsURL "admin-workers"}}">Workers</a> in the documentation.</p>{{end}}
 </section>
 
 {{range .Providers}}

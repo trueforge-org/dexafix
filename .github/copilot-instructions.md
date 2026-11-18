@@ -23,7 +23,7 @@ DexaFix is one Go binary that corrects smart-scale readings with DEXA scans. It 
 - Settings live on the Admin page (stored in the database), not in flags or environment variables. A flag is only for boot-critical things: addresses, database, key and secret files, backend URL, TLS files.
 - Secrets are never flag values or URL parts; flags take file paths. Do not log secrets, tokens or cookies.
 - v0.0.1 is released: never edit `00001_init.sql`. Every schema change is a new numbered migration, same file name for both SQLite and PostgreSQL, with a working `Down`.
-- Keep user-visible strings and status codes. Keep `docs/` and the in-app `docs.html` true.
+- Keep user-visible strings and status codes. Keep `docs/` true (user, admin and developer folders) and run `go generate ./pkg/frontend` so the in-app docs follow.
 - Do not weaken a test to make it pass.
 - Keep the merged coverage of the test modes at 100% of statements: new and changed code comes with tests in the same commit, and error branches are covered by making the real thing fail (see `tests.instructions.md`).
 

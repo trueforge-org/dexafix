@@ -1,0 +1,237 @@
+<h1 id="json-api">JSON API</h1>
+<p>All routes are under <code>/api/v1</code>. Bodies are JSON, and unknown request fields are
+rejected. Errors have the form <code>{&quot;error&quot;: &quot;...&quot;}</code>.</p>
+<p>The public API is served by the api process's public listener (<code>--listen</code>, port
+8080 by default). In <code>serve</code> it is the same listener as the web app. In a
+<a href="/docs/admin/split-deployment">split deployment</a>, the reverse proxy sends <code>/api/</code> to
+that listener. <code>/internal/v1</code> is the private link between the web process and
+the api process. It is not a supported API and can change between releases.</p>
+<p>Every request must be authenticated, except <code>GET /healthz</code> and static files.
+Responses are 401 when the request is not authenticated, and 403 when the
+user's role is not enough. See <a href="#authentication">Authentication</a>.</p>
+<p>The administrator endpoints (<code>GET</code> and <code>POST /users</code>, <code>GET /audit</code>) do not take the
+session cookie of an administrator who has two-step verification on: the Admin pages
+ask that administrator for a code again, and the cookie that proves it never reaches
+the API. Such an administrator uses an access token (403 otherwise).</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/users</code></td>
+<td>List users. Administrators only. Each has <code>username</code>, <code>first_name</code> and <code>last_name</code>; <code>name</code> repeats the username for scripts written for v0.0.1.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/users</code></td>
+<td>Create a user. Administrators only. Body: <code>{&quot;username&quot;: &quot;...&quot;, &quot;email&quot;: &quot;...&quot;, &quot;password&quot;: &quot;...&quot;}</code>. <code>username</code> and <code>email</code> are required and unique; a taken username is 409. <code>password</code> is optional.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/users/{id}/dexa-scans</code></td>
+<td>List DEXA scans.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/users/{id}/dexa-scans</code></td>
+<td>Add a scan. <code>measured_at</code> is required (RFC 3339).</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/users/{id}/scale-readings</code></td>
+<td>List scale readings.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/users/{id}/scale-readings</code></td>
+<td>Add a batch: a JSON array of up to 5000 readings.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/users/{id}/settings</code></td>
+<td>Athlete-mode default and method ranking.</td>
+</tr>
+<tr>
+<td>PUT</td>
+<td><code>/users/{id}/settings</code></td>
+<td>Replace them. Body: <code>{&quot;athlete_default&quot;: true, &quot;method_ranking&quot;: [...]}</code>.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/users/{id}/export/profile</code></td>
+<td>Download settings and personal details (JSON file). See <a href="/docs/user/accounts-and-sign-in#data-export">Your data</a>.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/users/{id}/export/data</code></td>
+<td>Download all scans and readings (JSON file).</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/users/{id}/audit</code></td>
+<td>Events about your account, newest first.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/audit</code></td>
+<td>The whole audit log. Administrators only.</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/users/{id}/estimates</code></td>
+<td>Daily estimates and calibrations.</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/users/{id}/import/{provider}</code></td>
+<td>Import from a provider. Optional <code>since</code> and <code>day</code> query parameters.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Requests with a body must say <code>Content-Type: application/json</code>; another type is a
+415 (a request with no <code>Content-Type</code> at all is still read, as before). A request that a browser marks as coming from another origin (it sends <code>Origin</code>
+or <code>Sec-Fetch-Site</code>) is refused with a 403 unless it comes from the base URL set on
+the Admin page, so a web page of another site cannot act as the signed-in user.
+Scripts and tools send neither header and are not affected.</p>
+<p>Scans and readings cannot be deleted through the API, and access tokens cannot
+be created or revoked through it. Use the web interface for those. Changing a
+password revokes all of the user's access tokens, and so does an administrator
+setting it or a password reset, so create new tokens afterwards if you use the API.
+The administrator's two-step code for the Admin pages does not apply here: API
+calls use access tokens.</p>
+<p>The two list endpoints (<code>dexa-scans</code> and <code>scale-readings</code>) return the newest
+first and are paged. Query parameters: <code>limit</code> (default 1000, at most 10000),
+<code>before</code> (the cursor from the previous page), <code>since</code> and <code>until</code> (RFC 3339 or
+<code>YYYY-MM-DD</code>, inclusive; a plain date as <code>until</code> covers that whole day). When
+there are older items, the response has an <code>X-Next-Cursor</code> header; pass its
+value as <code>before</code> to get the next page. The body stays a plain JSON array. The
+scale page in the web interface shows 100 readings at a time. The export
+endpoints always return everything.</p>
+<p>Batch readings with an <code>external_id</code> are upserted on <code>source</code> and
+<code>external_id</code>, so repeated imports do not duplicate. Readings without a
+<code>source</code> get <code>manual</code>. A <code>source</code> is 1 to 32 characters of <code>a-z</code>, <code>0-9</code>, <code>_</code> and
+<code>-</code>; an <code>external_id</code> is at most 128 characters; <code>measured_at</code> is required and
+lies between 1900-01-01 and tomorrow (the same for scans). A
+batch that breaks one of these is refused as a whole with a 400 that names the
+item. Do not use the name of a provider (<code>withings</code>) for readings of your own: the
+next import from that provider treats them as its own and may replace them. Once
+you have connected a provider, a batch with its name as the <code>source</code> is refused
+with a 400; before that the name is still accepted, as it always was.</p>
+<p>Readings also take <code>method</code> (<code>scale</code> by default, or <code>hydrostatic</code>, <code>bodpod</code>,
+<code>caliper</code>, <code>tape</code>, <code>visual-ai</code>, <code>manual-entry</code>) and <code>athlete_mode</code>. When <code>athlete_mode</code> is left
+out, the user's default applies. A re-import never changes the method or athlete
+mode of a stored reading. In <code>method_ranking</code>, methods you leave out follow in
+the default order.</p>
+<pre><code class="language-bash">export DEXAFIX_TOKEN=dxf_...   # personal access token from Settings
+export DEXAFIX_USER=...        # your user id: the number in the address of your pages, /u/&lt;id&gt;/
+
+curl -s -X POST localhost:8080/api/v1/users \
+  -H &quot;Authorization: Bearer $DEXAFIX_TOKEN&quot; \
+  -H 'Content-Type: application/json' \
+  -d '{&quot;username&quot;: &quot;alice&quot;, &quot;email&quot;: &quot;alice@example.com&quot;}'
+
+curl -s -X POST localhost:8080/api/v1/users/$DEXAFIX_USER/dexa-scans \
+  -H &quot;Authorization: Bearer $DEXAFIX_TOKEN&quot; \
+  -H 'Content-Type: application/json' \
+  -d '{&quot;measured_at&quot;: &quot;2026-03-01T08:00:00Z&quot;, &quot;weight_kg&quot;: 80.0}'
+
+curl -s -X POST localhost:8080/api/v1/users/$DEXAFIX_USER/scale-readings \
+  -H &quot;Authorization: Bearer $DEXAFIX_TOKEN&quot; \
+  -H 'Content-Type: application/json' \
+  -d '[{&quot;measured_at&quot;: &quot;2026-03-01T07:00:00Z&quot;, &quot;weight_kg&quot;: 82.0}]'
+
+curl -s -H &quot;Authorization: Bearer $DEXAFIX_TOKEN&quot; \
+  localhost:8080/api/v1/users/$DEXAFIX_USER/estimates
+</code></pre>
+<h2 id="authentication">Authentication</h2>
+<p>Send one of these with each request:</p>
+<ul>
+<li>
+<p><code>Authorization: Bearer &lt;personal access token&gt;</code>. Tokens start with <code>dxf_</code>.
+Create them in Settings. A token is shown once and stored only as a hash.
+It works for the API only.</p>
+</li>
+<li>
+<p><code>Authorization: Bearer &lt;ID token&gt;</code> from an OpenID Connect or Sign in with
+Apple provider, for an account linked to that provider. The token must be a
+JWT signed by the provider and issued for this application's client ID.
+Opaque access tokens are not accepted.</p>
+</li>
+<li>
+<p>HTTP Basic with the e-mail address and password, while password sign-in is
+on:</p>
+<pre><code class="language-bash">curl -s -u you@example.com:password localhost:8080/api/v1/users/$DEXAFIX_USER/estimates
+</code></pre>
+<p>This is refused for an account with two-step verification on, or required by
+an administrator, because a password alone is not enough for it. Such accounts
+use a personal access token.</p>
+</li>
+<li>
+<p>The browser session cookie, set when you sign in on the website.</p>
+</li>
+</ul>
+<p>The administrator routes of the API (<code>/users</code> and the like) accept the token of
+an administrator without the second proof the Admin pages ask for. Treat an
+administrator's token like their password: create it only where you need it, give
+it an expiry and delete it when it is no longer used.</p>
+<p>A user can reach only their own <code>/users/{id}/...</code> routes. Other ids answer 404.
+<code>GET /users</code> and <code>POST /users</code> are for administrators only.</p>
+<h2 id="import-endpoint">Import endpoint</h2>
+<pre><code class="language-bash">curl -s -X POST -H &quot;Authorization: Bearer $DEXAFIX_TOKEN&quot; \
+  'localhost:8080/api/v1/users/$DEXAFIX_USER/import/withings?since=2026-01-01T00:00:00Z'
+curl -s -X POST -H &quot;Authorization: Bearer $DEXAFIX_TOKEN&quot; \
+  'localhost:8080/api/v1/users/$DEXAFIX_USER/import/withings?day=2026-03-01'
+</code></pre>
+<ul>
+<li><code>since</code> is an RFC 3339 timestamp. It limits a bulk import to measurements at
+or after that time.</li>
+<li><code>day</code> is a date such as <code>2026-03-01</code>. It re-imports that day. When <code>day</code> is
+set, <code>since</code> is ignored.</li>
+</ul>
+<p>A successful import returns counts:</p>
+<pre><code class="language-json">{&quot;provider&quot;:&quot;withings&quot;,&quot;imported&quot;:3,&quot;updated&quot;:0,&quot;unchanged&quot;:12,&quot;removed&quot;:0,&quot;skipped&quot;:0}
+</code></pre>
+<p><code>skipped_days</code> (a list of <code>YYYY-MM-DD</code>) appears only when <code>skipped</code> is above
+zero.</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>400</td>
+<td><code>since</code> or <code>day</code> is malformed.</td>
+</tr>
+<tr>
+<td>404</td>
+<td>Unknown provider or user.</td>
+</tr>
+<tr>
+<td>409</td>
+<td>The user has not connected the provider.</td>
+</tr>
+<tr>
+<td>501</td>
+<td>The server has no credentials for the provider.</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="other-routes">Other routes</h2>
+<ul>
+<li><code>GET /healthz</code> returns <code>ok</code>.</li>
+<li><code>GET /u/{id}/integrations/{provider}/connect</code> starts OAuth. The provider then
+calls <code>GET /integrations/{provider}/callback</code>. The callback is not per user,
+because Withings accepts one redirect URL. A short-lived cookie set by
+<code>connect</code> identifies the user. Both return 404 when the provider is unknown
+or not configured.</li>
+<li><code>POST /u/{id}/integrations/{provider}/disconnect</code> forgets the user's tokens.</li>
+</ul>

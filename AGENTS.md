@@ -18,7 +18,7 @@ These are the instructions for AI coding agents working in the DexaFix repositor
 | `pkg/estimate`, `pkg/mailer`, `pkg/models` | [`domain-libraries.instructions.md`](.github/instructions/domain-libraries.instructions.md) |
 | `pkg/workers/**` (workers for Withings, Strength Level, ...) | [`workers.instructions.md`](.github/instructions/workers.instructions.md), and [`shared.instructions.md`](.github/instructions/shared.instructions.md) for the contract `pkg/shared/workerapi` |
 | any `*.go` (coverage) and every `*_test.go` | [`tests.instructions.md`](.github/instructions/tests.instructions.md) |
-| `docs/**`, `README.md` | [`docs.instructions.md`](.github/instructions/docs.instructions.md) |
+| `docs/**`, `README.md`, `tools/docsgen/**` | [`docs.instructions.md`](.github/instructions/docs.instructions.md) |
 | `deploy/**`, `Dockerfile.ci` | [`deploy.instructions.md`](.github/instructions/deploy.instructions.md) |
 | `.github/workflows/**`, `.goreleaser.yaml`, `codecov.yml` | [`ci-release.instructions.md`](.github/instructions/ci-release.instructions.md) |
 
@@ -49,8 +49,9 @@ worker (pkg/workers, no database) ──worker API /internal/v1/worker, worker s
 | `pkg/workers/` | The workers: processes **without a database** that talk to Withings, Strength Level, the sign-in providers (`oidc`), the mail server (`mail`) and the like for the backend. One package per provider (`withings`, `strengthlevel`), the generic loop (`runner`) and the built-in list (`builtin`). Their jobs come from the queue in the backend's database, over `pkg/shared/workerapi`. |
 | `pkg/estimate`, `pkg/mailer`, `pkg/models` | Domain libraries (estimation maths, SMTP, data types). |
 | `cmd/`, `main.go` | The command line (`serve`, `serve web`, `serve api`, `serve worker`, `db`, `user`, `settings`, `secrets`, `info`). |
+| `tools/docsgen/` | Build-time generator for the in-app docs (goldmark lives only here; the binary imports no markdown library). |
 | `deploy/` | The recommended Docker Compose deployment (web, api, body, workers, PostgreSQL from ContainerForge). One Compose file with PostgreSQL and Valkey. Its `init` container is `dexafix secrets init` (`cmd/secrets_init.go`), which makes every secret and the mutual TLS certificates into volumes, and its `db-setup` container is `dexafix db provision` (`sqlstore.Provision`), which makes the database roles and the schema `body`. |
-| `docs/` | User and developer documentation (numbered pages and `index.md`). The same content is served in-app from `pkg/frontend/templates/docs.html`. |
+| `docs/` | Documentation in three folders, `user/`, `admin/` and `developer/`, with an `index.md`. It is rendered at build time by `tools/docsgen` into `pkg/frontend/docsite/` and served in the app at `/docs` (run `go generate ./pkg/frontend` after a change). |
 
 The dependency rules are enforced by tests (`go list -deps`), see [`shared.instructions.md`](.github/instructions/shared.instructions.md): the frontend and `pkg/shared` never import the backend, the store, a database library or anything that talks to the outside; the backend never imports the frontend, the workers or the body service (it uses `pkg/shared/bodyapi`); the body service never imports the backend, the frontend, the workers, the mailer or a sign-in library; the workers never import the backend, the frontend, the store or a database library.
 
@@ -64,7 +65,7 @@ The dependency rules are enforced by tests (`go list -deps`), see [`shared.instr
 6. **Secrets never appear on a command line or in a URL.** Flags carry paths to files; values come from files or the environment. Tokens travel in headers. Do not log secrets, keys, tokens, passwords or full cookies.
 7. **Released schemas change only by a new migration.** v0.0.1 is out, so never edit `00001_init.sql`. Add a numbered migration with the same file name in `pkg/store/sqlstore/migrations/{sqlite,postgres}/` (a working `Down` section too), and test the upgrade of existing data. `TestMigrationParity` checks that the two agree.
 8. **Keep behaviour, strings and status codes** when you move or refactor code: tests and users depend on them.
-9. **Keep the documentation true.** A change to a flag, setting, route, cookie, header or deployment step updates `docs/`, the in-app `docs.html` and, if it changes how agents should work, these instructions. Document only what you ran.
+9. **Keep the documentation true.** A change to a flag, setting, route, cookie, header or deployment step updates `docs/` (the right folder for its reader; then `go generate ./pkg/frontend` for the in-app copy) and, if it changes how agents should work, these instructions. Document only what you ran.
 10. **Do not change CI workflows, release config or repository-wide tooling** unless the task is about them.
 11. **Never commit secrets,** real credentials, private keys or certificates. The `deploy/secrets` directory is created locally and must stay out of git.
 
@@ -78,7 +79,7 @@ DEXAFIX_TEST_SPLIT=1 go test -race -count=1 ./pkg/backend/... ./pkg/frontend   #
 
 - PostgreSQL: `docker run -d --rm --name dexa-pg -e POSTGRES_PASSWORD=x -p 5432:5432 postgres:18`, then `DEXAFIX_TEST_POSTGRES_DSN='postgres://postgres:x@localhost:5432/postgres?sslmode=disable' go test ./pkg/store/sqlstore/` (each test gets its own schema). If the Docker daemon is on another host than your shell, use the container's IP instead of `localhost`.
 - Test output is noisy JSON log lines. Filter with `| grep -v '^{'` and redirect long output to a file.
-- Run the real thing before you call a deployment change done: build the binary, start `serve body`, `serve api` (with `--body-url`), `serve web` and `serve worker` with generated secrets (see [`docs/15-split-deployment.md`](docs/15-split-deployment.md) and [`docs/16-workers.md`](docs/16-workers.md)), and use it.
+- Run the real thing before you call a deployment change done: build the binary, start `serve body`, `serve api` (with `--body-url`), `serve web` and `serve worker` with generated secrets (see [`docs/admin/06-split-deployment.md`](docs/admin/06-split-deployment.md) and [`docs/admin/07-workers.md`](docs/admin/07-workers.md)), and use it.
 - CI also runs `go mod tidy` (no diff allowed), `govulncheck` and a build matrix.
 
 ## Security

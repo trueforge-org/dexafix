@@ -1,0 +1,68 @@
+<h1 id="ci-and-releases">CI and releases</h1>
+<h2 id="badges-paste-into-readmemd">Badges (paste into README.md)</h2>
+<pre><code class="language-markdown">[![CI](https://github.com/trueforge-org/dexafix/actions/workflows/ci.yaml/badge.svg)](https://github.com/trueforge-org/dexafix/actions/workflows/ci.yaml)
+[![codecov](https://codecov.io/gh/trueforge-org/dexafix/graph/badge.svg)](https://codecov.io/gh/trueforge-org/dexafix)
+[![Latest release](https://img.shields.io/github/v/release/trueforge-org/dexafix)](https://github.com/trueforge-org/dexafix/releases/latest)
+[![License](https://img.shields.io/github/license/trueforge-org/dexafix)](LICENSE)
+[![Sponsor on Open Collective](https://img.shields.io/opencollective/all/dexafix?label=sponsor&amp;logo=opencollective)](https://opencollective.com/dexafix)
+</code></pre>
+<h2 id="what-ci-checks">What CI checks</h2>
+<p><code>.github/workflows/ci.yaml</code> runs on pushes to <code>main</code>, pull requests, manually and weekly (Monday):</p>
+<ul>
+<li><strong>Lint</strong>: gofmt, <code>go vet</code>, and a <code>go mod tidy</code> check.</li>
+<li><strong>Test (sqlite)</strong> and <strong>Test (postgres)</strong>: <code>go test -race</code> with coverage. The Postgres run uses a
+service container and <code>DEXAFIX_TEST_POSTGRES_DSN</code>, so the Postgres migrations are exercised.
+Coverage goes to Codecov with the flags <code>unit</code> and <code>postgres</code>.</li>
+<li><strong>govulncheck</strong>: known vulnerabilities in dependencies and the standard library. The version is pinned in <code>GOVULNCHECK_VERSION</code> at the top of the workflow and must be kept current: an old release analyses newer Go code with an old copy of <code>golang.org/x/tools</code> and can crash at random (exit status 2, <code>panic: unexpected expr</code>) instead of reporting. A real finding exits with status 3.</li>
+<li><strong>Build</strong>: cross-compile for linux/amd64, linux/arm64, darwin/arm64, windows/amd64, plus
+<code>goreleaser check</code> and a snapshot release.</li>
+</ul>
+<h3 id="cutting-a-release">Cutting a release</h3>
+<pre><code class="language-sh">git tag v1.0.0
+git push origin v1.0.0
+</code></pre>
+<p><code>.github/workflows/release.yaml</code> runs GoReleaser and publishes:</p>
+<ul>
+<li>a GitHub release with <code>tar.gz</code> (zip on Windows) archives for linux/darwin/windows on amd64/arm64,
+<code>checksums.txt</code>, a keyless cosign signature of it (<code>checksums.txt.sigstore.json</code>), SBOMs, and a
+changelog grouped by conventional-commit prefix;</li>
+<li>build provenance attestations for the release artifacts.</li>
+</ul>
+<p>Run the Release workflow manually (workflow_dispatch) for a dry run that builds a snapshot only.</p>
+<p>Every third-party action is pinned to a commit SHA with its version in a comment, because the
+release job holds write and signing permissions. Renovate proposes the updates. The GoReleaser
+version is pinned in <code>.github/goreleaser/Dockerfile</code> (a file that is never built; it is there so
+Renovate's docker manager proposes updates, and <code>release.yaml</code> reads the tag from it).</p>
+<h3 id="dependency-updates">Dependency updates</h3>
+<p><code>.renovaterc.json5</code> is the Renovate configuration, the same as in <code>trueforge-org/forgetool</code>: it
+extends the organisation preset <code>github&gt;trueforge-org/renovate-config</code> (Go modules, GitHub Actions
+and Docker images, with pinned digests, semantic commit messages, labels and schedules). One thing is
+added here: a custom manager that keeps <code>GOVULNCHECK_VERSION</code> in <code>ci.yaml</code> current, because an old
+govulncheck crashes at random on newer Go code.</p>
+<p>Renovate is the only tool that proposes dependency updates here (there is no Dependabot
+configuration). It acts only where the Renovate app is enabled for the repository.</p>
+<h3 id="container">Container</h3>
+<p>This repository's release builds and publishes no container image. The released image is built by
+ContainerForge (<code>apps/dexafix</code> in <a href="https://github.com/trueforge-org/containerforge">trueforge-org/containerforge</a>)
+from a GitHub release of this repository, and is published as <code>ghcr.io/trueforge-org/dexafix</code>. The Compose
+example in <code>deploy/</code> pulls it, and relies on what <code>Dockerfile.ci</code> has too: the binary at <code>/dexafix</code>, the user
+<code>568:568</code>, <code>/config</code>, and the mount points <code>/secrets/&lt;name&gt;</code> owned by <code>568:568</code>.</p>
+<p><code>Dockerfile.ci</code> is for CI, tests and automation (the Compose example in <code>deploy/</code>, split-mode runs,
+agents). Build it from the repository:</p>
+<pre><code class="language-sh">CGO_ENABLED=0 go build -trimpath -o dexafix . &amp;&amp; docker build -f Dockerfile.ci -t dexafix .
+docker run -p 8080:8080 -v dexafix-data:/config DexaFix
+</code></pre>
+<p>The process runs as uid 568; a bind-mounted data directory must be writable by it
+(<code>chown 568:568 ./config</code>).</p>
+<p>The image is built <code>FROM scratch</code>: the binary embeds its time zones and CA roots, and there is no
+shell, so <code>docker exec ... sh</code> does not work. Run one-off commands as a new container instead, for
+example <code>docker run --rm -v dexafix-data:/config dexafix db migrate status</code>.</p>
+<h3 id="required-configuration">Required configuration</h3>
+<ul>
+<li>Secret <code>CODECOV_TOKEN</code> (from codecov.io after adding the repository). Without it uploads fail
+softly and CI still passes.</li>
+<li>Settings, Actions, General: workflow permissions must allow the release workflow to request
+<code>contents: write</code> (the workflow sets it itself).</li>
+<li>Branch protection on <code>main</code>: require the checks Lint, Test (sqlite), Test (postgres),
+govulncheck and the Build jobs.</li>
+</ul>

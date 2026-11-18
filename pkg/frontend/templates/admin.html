@@ -26,8 +26,8 @@
     <div><dt>Workers</dt><dd><a href="/admin/workers">Settings, queue and priorities</a></dd></div>
     <div><dt>Health</dt><dd><a href="/admin/status">Status of every part</a></dd></div>
   </dl>
-  {{if .Key.Rekey}}<p class="notice" role="status">The database is still encrypted with a previous key. Stop the server and run <code>dexafix db rekey</code>; see <a href="/docs#encryption">Rotating the key</a>.</p>
-  {{else if .Key.Due}}<p class="notice" role="status">The encryption key is {{.Key.AgeDays}} days old, past your reminder. Rotation is manual: see <a href="/docs#encryption">Rotating the key</a>.</p>{{end}}
+  {{if .Key.Rekey}}<p class="notice" role="status">The database is still encrypted with a previous key. Stop the server and run <code>dexafix db rekey</code>; see <a href="{{docsURL "rotating-the-key"}}">Rotating the key</a>.</p>
+  {{else if .Key.Due}}<p class="notice" role="status">The encryption key is {{.Key.AgeDays}} days old, past your reminder. Rotation is manual: see <a href="{{docsURL "rotating-the-key"}}">Rotating the key</a>.</p>{{end}}
 </section>
 
 <section class="card flush" id="users">
@@ -93,7 +93,7 @@
     <label>Keep the audit log for (days) <input type="number" name="audit_retention_days" min="0" max="36500" value="{{.Server.AuditDays}}" placeholder="365">
       <small>Empty uses 365. 0 keeps the log for good. Older events, and the IP addresses in them, are deleted.</small></label>
     <label>Remind me to rotate the encryption key after (days) <input type="number" name="key_reminder_days" min="0" max="36500" value="{{.Server.KeyReminderDays}}" placeholder="off">
-      <small>Empty or 0 never reminds. Rotation is manual: see <a href="/docs#encryption">Rotating the key</a>.</small></label>
+      <small>Empty or 0 never reminds. Rotation is manual: see <a href="{{docsURL "rotating-the-key"}}">Rotating the key</a>.</small></label>
     <div class="form-actions"><button type="submit">Save</button></div>
   </form>
 </section>

@@ -41,7 +41,7 @@ description: "Rules for the command line and process wiring: flags and environme
 
 ## When you change a flag
 
-Update the table in `docs/02-configuration.md`, the commands in `docs/05-commands.md`, `docs/15-split-deployment.md` if it affects the two-process setup, the flags table and section in `pkg/frontend/templates/docs.html`, and `Dockerfile.ci` or `deploy/` if a default changes. Add a test in `cmd/` for the validation rules.
+Update the table in `docs/admin/02-configuration.md`, the commands in `docs/admin/03-commands.md`, `docs/admin/06-split-deployment.md` if it affects the two-process setup, and, after `go generate ./pkg/frontend`, the generated in-app docs, and `Dockerfile.ci` or `deploy/` if a default changes. Add a test in `cmd/` for the validation rules.
 
 ## `pkg/app`
 

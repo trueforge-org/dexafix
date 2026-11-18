@@ -1,0 +1,170 @@
+# JSON API
+
+All routes are under `/api/v1`. Bodies are JSON, and unknown request fields are
+rejected. Errors have the form `{"error": "..."}`.
+
+The public API is served by the api process's public listener (`--listen`, port
+8080 by default). In `serve` it is the same listener as the web app. In a
+[split deployment](../admin/06-split-deployment.md), the reverse proxy sends `/api/` to
+that listener. `/internal/v1` is the private link between the web process and
+the api process. It is not a supported API and can change between releases.
+
+Every request must be authenticated, except `GET /healthz` and static files.
+Responses are 401 when the request is not authenticated, and 403 when the
+user's role is not enough. See [Authentication](#authentication).
+
+The administrator endpoints (`GET` and `POST /users`, `GET /audit`) do not take the
+session cookie of an administrator who has two-step verification on: the Admin pages
+ask that administrator for a code again, and the cookie that proves it never reaches
+the API. Such an administrator uses an access token (403 otherwise).
+
+| Method | Path                            | Description                                                                                                                                             |
+| ------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/users`                        | List users. Administrators only. Each has `username`, `first_name` and `last_name`; `name` repeats the username for scripts written for v0.0.1. |
+| POST   | `/users`                        | Create a user. Administrators only. Body: `{"username": "...", "email": "...", "password": "..."}`. `username` and `email` are required and unique; a taken username is 409. `password` is optional. |
+| GET    | `/users/{id}/dexa-scans`        | List DEXA scans.                                                                                                                                        |
+| POST   | `/users/{id}/dexa-scans`        | Add a scan. `measured_at` is required (RFC 3339).                                                                                                       |
+| GET    | `/users/{id}/scale-readings`    | List scale readings.                                                                                                                                    |
+| POST   | `/users/{id}/scale-readings`    | Add a batch: a JSON array of up to 5000 readings.                                                                                                       |
+| GET    | `/users/{id}/settings`          | Athlete-mode default and method ranking.                                                                                                                |
+| PUT    | `/users/{id}/settings`          | Replace them. Body: `{"athlete_default": true, "method_ranking": [...]}`.                                                                               |
+| GET    | `/users/{id}/export/profile`    | Download settings and personal details (JSON file). See [Your data](../user/02-accounts-and-sign-in.md#data-export).                                                                        |
+| GET    | `/users/{id}/export/data`       | Download all scans and readings (JSON file).                                                                                                            |
+| GET    | `/users/{id}/audit`             | Events about your account, newest first.                                                                                                                |
+| GET    | `/audit`                        | The whole audit log. Administrators only.                                                                                                               |
+| GET    | `/users/{id}/estimates`         | Daily estimates and calibrations.                                                                                                                       |
+| POST   | `/users/{id}/import/{provider}` | Import from a provider. Optional `since` and `day` query parameters.                                                                                    |
+
+Requests with a body must say `Content-Type: application/json`; another type is a
+415 (a request with no `Content-Type` at all is still read, as before). A request that a browser marks as coming from another origin (it sends `Origin`
+or `Sec-Fetch-Site`) is refused with a 403 unless it comes from the base URL set on
+the Admin page, so a web page of another site cannot act as the signed-in user.
+Scripts and tools send neither header and are not affected.
+
+Scans and readings cannot be deleted through the API, and access tokens cannot
+be created or revoked through it. Use the web interface for those. Changing a
+password revokes all of the user's access tokens, and so does an administrator
+setting it or a password reset, so create new tokens afterwards if you use the API.
+The administrator's two-step code for the Admin pages does not apply here: API
+calls use access tokens.
+
+The two list endpoints (`dexa-scans` and `scale-readings`) return the newest
+first and are paged. Query parameters: `limit` (default 1000, at most 10000),
+`before` (the cursor from the previous page), `since` and `until` (RFC 3339 or
+`YYYY-MM-DD`, inclusive; a plain date as `until` covers that whole day). When
+there are older items, the response has an `X-Next-Cursor` header; pass its
+value as `before` to get the next page. The body stays a plain JSON array. The
+scale page in the web interface shows 100 readings at a time. The export
+endpoints always return everything.
+
+Batch readings with an `external_id` are upserted on `source` and
+`external_id`, so repeated imports do not duplicate. Readings without a
+`source` get `manual`. A `source` is 1 to 32 characters of `a-z`, `0-9`, `_` and
+`-`; an `external_id` is at most 128 characters; `measured_at` is required and
+lies between 1900-01-01 and tomorrow (the same for scans). A
+batch that breaks one of these is refused as a whole with a 400 that names the
+item. Do not use the name of a provider (`withings`) for readings of your own: the
+next import from that provider treats them as its own and may replace them. Once
+you have connected a provider, a batch with its name as the `source` is refused
+with a 400; before that the name is still accepted, as it always was.
+
+Readings also take `method` (`scale` by default, or `hydrostatic`, `bodpod`,
+`caliper`, `tape`, `visual-ai`, `manual-entry`) and `athlete_mode`. When `athlete_mode` is left
+out, the user's default applies. A re-import never changes the method or athlete
+mode of a stored reading. In `method_ranking`, methods you leave out follow in
+the default order.
+
+```bash
+export DEXAFIX_TOKEN=dxf_...   # personal access token from Settings
+export DEXAFIX_USER=...        # your user id: the number in the address of your pages, /u/<id>/
+
+curl -s -X POST localhost:8080/api/v1/users \
+  -H "Authorization: Bearer $DEXAFIX_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"username": "alice", "email": "alice@example.com"}'
+
+curl -s -X POST localhost:8080/api/v1/users/$DEXAFIX_USER/dexa-scans \
+  -H "Authorization: Bearer $DEXAFIX_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"measured_at": "2026-03-01T08:00:00Z", "weight_kg": 80.0}'
+
+curl -s -X POST localhost:8080/api/v1/users/$DEXAFIX_USER/scale-readings \
+  -H "Authorization: Bearer $DEXAFIX_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '[{"measured_at": "2026-03-01T07:00:00Z", "weight_kg": 82.0}]'
+
+curl -s -H "Authorization: Bearer $DEXAFIX_TOKEN" \
+  localhost:8080/api/v1/users/$DEXAFIX_USER/estimates
+```
+
+## Authentication
+
+Send one of these with each request:
+
+- `Authorization: Bearer <personal access token>`. Tokens start with `dxf_`.
+  Create them in Settings. A token is shown once and stored only as a hash.
+  It works for the API only.
+- `Authorization: Bearer <ID token>` from an OpenID Connect or Sign in with
+  Apple provider, for an account linked to that provider. The token must be a
+  JWT signed by the provider and issued for this application's client ID.
+  Opaque access tokens are not accepted.
+- HTTP Basic with the e-mail address and password, while password sign-in is
+  on:
+
+  ```bash
+  curl -s -u you@example.com:password localhost:8080/api/v1/users/$DEXAFIX_USER/estimates
+  ```
+
+  This is refused for an account with two-step verification on, or required by
+  an administrator, because a password alone is not enough for it. Such accounts
+  use a personal access token.
+
+- The browser session cookie, set when you sign in on the website.
+
+The administrator routes of the API (`/users` and the like) accept the token of
+an administrator without the second proof the Admin pages ask for. Treat an
+administrator's token like their password: create it only where you need it, give
+it an expiry and delete it when it is no longer used.
+
+A user can reach only their own `/users/{id}/...` routes. Other ids answer 404.
+`GET /users` and `POST /users` are for administrators only.
+
+## Import endpoint
+
+```bash
+curl -s -X POST -H "Authorization: Bearer $DEXAFIX_TOKEN" \
+  'localhost:8080/api/v1/users/$DEXAFIX_USER/import/withings?since=2026-01-01T00:00:00Z'
+curl -s -X POST -H "Authorization: Bearer $DEXAFIX_TOKEN" \
+  'localhost:8080/api/v1/users/$DEXAFIX_USER/import/withings?day=2026-03-01'
+```
+
+- `since` is an RFC 3339 timestamp. It limits a bulk import to measurements at
+  or after that time.
+- `day` is a date such as `2026-03-01`. It re-imports that day. When `day` is
+  set, `since` is ignored.
+
+A successful import returns counts:
+
+```json
+{"provider":"withings","imported":3,"updated":0,"unchanged":12,"removed":0,"skipped":0}
+```
+
+`skipped_days` (a list of `YYYY-MM-DD`) appears only when `skipped` is above
+zero.
+
+| Status | Meaning                                         |
+| ------ | ----------------------------------------------- |
+| 400    | `since` or `day` is malformed.                  |
+| 404    | Unknown provider or user.                       |
+| 409    | The user has not connected the provider.        |
+| 501    | The server has no credentials for the provider. |
+
+## Other routes
+
+- `GET /healthz` returns `ok`.
+- `GET /u/{id}/integrations/{provider}/connect` starts OAuth. The provider then
+  calls `GET /integrations/{provider}/callback`. The callback is not per user,
+  because Withings accepts one redirect URL. A short-lived cookie set by
+  `connect` identifies the user. Both return 404 when the provider is unknown
+  or not configured.
+- `POST /u/{id}/integrations/{provider}/disconnect` forgets the user's tokens.

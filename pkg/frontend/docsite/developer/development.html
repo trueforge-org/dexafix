@@ -1,0 +1,96 @@
+<h1 id="development">Development</h1>
+<pre><code class="language-bash">go test ./...
+</code></pre>
+<p>The tests use in-memory SQLite. To run the store tests against Postgres too,
+set <code>DEXAFIX_TEST_POSTGRES_DSN</code>. Each test gets its own schema. Postgres 18 is
+the supported version, so test against that:</p>
+<pre><code class="language-bash">docker run -d --rm --name dexa-pg -e POSTGRES_PASSWORD=x -p 5432:5432 postgres:18
+DEXAFIX_TEST_POSTGRES_DSN='postgres://postgres:x@localhost:5432/postgres?sslmode=disable' \
+  go test ./pkg/store/sqlstore/
+</code></pre>
+<p>The browser-level tests live in <code>pkg/backend/main</code>: <code>stack_test.go</code> builds a
+main backend with a frontend over the in-process internal API, as <code>pkg/app</code>
+does. To run them against the split deployment (a frontend without a database
+that talks over TCP to a separate main backend), set <code>DEXAFIX_TEST_SPLIT</code>. CI
+runs both ways. The tests that cover the combined server's listeners are
+skipped there; <code>pkg/frontend/frontend_tls_test.go</code> covers HTTPS in the split.</p>
+<pre><code class="language-bash">go test ./pkg/backend/... ./pkg/frontend ./pkg/app
+DEXAFIX_TEST_SPLIT=1 go test ./pkg/backend/... ./pkg/frontend
+</code></pre>
+<h2 id="layout">Layout</h2>
+<ul>
+<li><code>main.go</code>: entry point. Sets up logging and prints the version.</li>
+<li><code>cmd/</code>: <code>serve</code> runs the web app in one process. <code>serve web</code> and <code>serve api</code>
+(<code>serve_split.go</code>) run the frontend and the backend as two processes. <code>db</code>
+migrates and copies the database, <code>secrets</code> creates the service secret, and
+<code>info</code> prints binary information.</li>
+<li><code>pkg/frontend/</code>: package <code>frontend</code>. The HTML side: templates and static
+files, the page handlers (<code>handlers_*.go</code>), the public listeners (plain, HTTPS
+and HTTP/3), the config poller and the request limiter. It has no database
+and asks the main backend for everything through <code>apiclient.Client</code>.</li>
+<li><code>pkg/backend/main/</code>: package <code>mainbackend</code>, the main backend (<code>dexafix serve api</code>). The store, the keys and every security decision: the internal API under
+<code>/internal/v1</code> (<code>internal*.go</code>), the public API (<code>api.go</code>), importers,
+and maintenance. It reaches the scale readings, DEXA scans and estimates only
+through <code>body.go</code>, a wrapper of the <code>bodyapi</code> client. <code>pkg/backend</code> is a plain
+parent folder with a service in each subfolder.</li>
+<li><code>pkg/backend/body/</code>: package <code>bodybackend</code>, the body service (<code>dexafix serve body</code>, or inside the api process through <code>NewInProcess</code>): the readings and
+scans, the estimates and their cache (<code>estcache.go</code>) and the rules for
+importing readings. It knows nothing about people and trusts only the signed
+token of the api process. See <a href="/docs/admin/body-service">Body service</a>.</li>
+<li><code>pkg/app/</code>: package <code>app</code>, the single-process mode. <code>app.New</code> builds the main
+backend and the frontend over <code>apiclient.InProcess</code>; <code>serve</code> uses it.</li>
+<li><code>pkg/shared/</code>: what both sides use, in small packages named by function:
+<code>edge/</code> (the visitor's address behind a proxy, the PROXY protocol, request
+limits, security headers), <code>apiclient/</code> (the contract between the two: the
+client, the DTOs, header and cookie names, error codes, and the in-process
+transport), <code>bodyapi/</code> (the contract between the main backend and the body
+service, with its tokens), <code>inproc/</code> (the in-process transport),
+<code>tlsutil/</code> (certificate parsing), <code>timezones/</code> and <code>jobs/</code>.</li>
+</ul>
+<p>The rules are tests. <code>pkg/frontend/boundary_test.go</code> fails when the frontend
+imports (directly or not) anything under <code>pkg/backend/</code>, <code>pkg/store</code>, the
+importers, the mailer, Strength Level, a database driver, OIDC or WebAuthn.
+<code>pkg/shared/boundary_test.go</code> keeps <code>pkg/shared</code> independent of both sides and
+of the store. The main backend does not import the frontend or the body service
+(its tests may, to drive the HTML flows and to run a body service next to it),
+and the body service does not import the main backend, the frontend, the workers,
+the mailer or a sign-in library.</p>
+<ul>
+<li><code>pkg/estimate/</code>: estimation logic.</li>
+<li><code>pkg/strengthlevel/</code>: the Strength Level entries built from the estimates
+(<code>strengthlevel.go</code>) and the sync client (<code>client/</code>).</li>
+<li><code>pkg/importer/</code>: the importer interfaces and the registry.</li>
+<li><code>pkg/importer/withings/</code>: OAuth and API client (<code>client.go</code>), the rules for
+what to write (<code>plan.go</code>), and the importer (<code>withings.go</code>).</li>
+<li><code>pkg/models/</code>: domain types.</li>
+<li><code>pkg/store/</code>: the <code>Store</code> interface. <code>sqlstore/</code> implements it with bun for
+SQLite and Postgres. Its goose migrations live under <code>migrations/</code>.</li>
+</ul>
+<p>The layout and conventions follow trueforge-org/forgetool. <code>dexafix info</code>
+reuses its <code>pkg/info</code>.</p>
+<h2 id="guidance-for-ai-coding-agents">Guidance for AI coding agents</h2>
+<p>The rules for coding agents are in <a href="https://github.com/trueforge-org/dexafix/blob/main/AGENTS.md">AGENTS.md</a>, with the rules for one area of the code in <code>.github/instructions/</code>. The documentation rules are in <a href="https://github.com/trueforge-org/dexafix/blob/main/.github/instructions/docs.instructions.md">docs.instructions.md</a>.</p>
+<h2 id="schema-changes">Schema changes</h2>
+<p>The first release (v0.0.1) is out, so <code>00001_init.sql</code> is never edited again.
+Every schema change adds a migration with the same version number to both
+<code>pkg/store/sqlstore/migrations/sqlite/</code> and <code>migrations/postgres/</code>, for example
+<code>00002_add_notes.sql</code>. Each file has <code>-- +goose Up</code> and <code>-- +goose Down</code>
+sections. <code>TestMigrationParity</code> fails if the two directories differ.</p>
+<h2 id="adding-an-importer">Adding an importer</h2>
+<p>An importer writes readings from an external service. It implements:</p>
+<pre><code class="language-go">type Importer interface {
+    Name() string
+    Import(ctx context.Context, st store.Store, userID int64, o Options) (Result, error)
+}
+</code></pre>
+<p><code>Name</code> is the provider name used in URLs and as the readings' <code>Source</code>. Write
+through <code>st.UpsertScaleReadings</code> with a stable <code>ExternalID</code>, so repeated
+imports are idempotent. If the user must link an account, also implement
+<code>importer.OAuthProvider</code>. Its OAuth routes are generic over the provider name.</p>
+<p>Register the importer in <code>cmd/serve.go</code>:</p>
+<pre><code class="language-go">srv, err := app.New(st, importer.NewRegistry(wi, myImporter))
+</code></pre>
+<p>The import API works for any registered provider. The estimates page has
+buttons only for Withings (<code>providerWithings</code> in <code>pkg/backend/main/consts.go</code> and
+<code>pkg/frontend/templates/estimates.html</code>), so a new provider needs its own
+buttons there.</p>

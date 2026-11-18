@@ -1,0 +1,86 @@
+<h1 id="withings-and-strength-level">Withings and Strength Level</h1>
+<h2 id="withings">Withings</h2>
+<p>Each user links their own Withings account. Imported measurements are stored
+as scale readings with the source <code>withings</code> and the athlete-mode default from
+Settings. An administrator sets Withings up first: see
+<a href="/docs/admin/the-admin-page#withings-app">Withings application</a> and
+<a href="/docs/admin/the-admin-page#withings-workers">Withings workers and automatic imports</a>.</p>
+<h3 id="withings-import">Connecting and importing</h3>
+<ol>
+<li>On the Settings or Estimates page choose <strong>Connect Withings</strong> and grant
+access. Finish within 10 minutes, the lifetime of the connection state.</li>
+<li>Choose <strong>Import from Withings</strong>. It fetches the whole history.</li>
+</ol>
+<p>Connecting works only when the administrator has set the client id, secret and
+redirect URL; until then Settings shows Withings as not set up. Talking to
+Withings is a job for a worker, so imports wait while no worker runs. Automatic
+imports are off until an administrator gives them an interval; after the number
+of failed runs in a row that the administrator set, your automatic imports
+pause, until you disconnect and connect Withings again or an administrator
+resumes them.</p>
+<p>Imported: weight, fat ratio, fat mass, fat-free mass, muscle mass, hydration,
+bone mass and visceral fat. Measurements Withings marks as possibly belonging
+to someone else (for example a guest) are ignored. Days are calendar days in
+your <a href="/docs/user/using-the-app#time-zone">time zone</a>.</p>
+<p><strong>Disconnect Withings</strong> forgets your tokens. Imported readings are kept.</p>
+<h3 id="bulk-import">Bulk import</h3>
+<p><strong>Import from Withings</strong> fetches the whole history. Each day is handled by what
+is already stored:</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Day has</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>No readings</td>
+<td>Imported first.</td>
+</tr>
+<tr>
+<td>Withings readings only</td>
+<td>Changed readings are updated, identical ones are left alone, new ones are added. Nothing deleted.</td>
+</tr>
+<tr>
+<td>Manual readings</td>
+<td>New Withings readings are skipped and the day is listed in the result. Earlier imports are refreshed.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A manual entry is a deliberate value. Averaging it with a Withings reading of
+the same weigh-in would distort the day, so bulk import leaves such days alone.</p>
+<h3 id="re-import-one-day">Re-import one day</h3>
+<p>Use <strong>↻</strong> on a row of the estimates page, or <code>?day=</code> on the API, to re-import
+one day. It replaces that day's Withings data:</p>
+<ul>
+<li>Adds the day's Withings readings, even when manual readings exist.</li>
+<li>Updates changed readings.</li>
+<li>Removes stored Withings readings that Withings no longer returns, for
+example after a weigh-in was deleted in the Withings app.</li>
+<li>Never touches manual readings.</li>
+</ul>
+<h2 id="strengthlevel">Strength Level</h2>
+<p>Sends your estimated weight and body fat to your
+<a href="https://strengthlevel.com">Strength Level</a> account, so its strength standards
+use your real body weight.</p>
+<ul>
+<li><strong>Permission:</strong> an administrator must enable <em>Strength Level sync</em> for you on
+the Admin page (<a href="/docs/admin/the-admin-page#strengthlevel-permissions">Strength Level permissions</a>).
+Until then the card does not appear and the endpoints answer 403.</li>
+<li><strong>Login:</strong> your Strength Level e-mail and password, stored encrypted. Only
+e-mail and password accounts work, not Google, Apple or Facebook sign-in. The
+login is tested when you save it, so a wrong password is reported at once. The
+password is never shown again. <strong>Remove login</strong> deletes it.</li>
+<li><strong>Single day:</strong> the <strong>⇪</strong> button on a row of the Estimates page sends that day
+and replaces an entry that is already there.</li>
+<li><strong>Multi-day sync</strong> (needs the extra <em>multi-day sync</em> permission): choose
+<em>Last N days</em> (default 90, 1 to 3650). Days missing on Strength Level are
+added. With <em>Also update days that already exist</em> ticked, days that exist
+there with other values are overwritten too. Nothing is ever deleted. It runs
+in the background, one day at a time with a short pause, so long periods take
+a while; the progress shows on the page. Only one sync per user runs at a
+time.</li>
+<li><strong>What is sent:</strong> the daily estimate of weight and body fat, including
+interpolated and held days. Days without a weight estimate are left out.</li>
+</ul>

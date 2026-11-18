@@ -41,7 +41,7 @@ The public API admits at most half of the database connections (`publicInFlight`
 
 ## Public API
 
-`/api/v1` is a supported interface (see `docs/11-api.md`). Change it compatibly. Personal access tokens, Basic credentials and provider ID tokens are accepted **only** on `/api/` paths (`authBearer`, `authBasic`).
+`/api/v1` is a supported interface (see `docs/developer/02-json-api.md`). Change it compatibly. Personal access tokens, Basic credentials and provider ID tokens are accepted **only** on `/api/` paths (`authBearer`, `authBasic`).
 
 ## Layout
 

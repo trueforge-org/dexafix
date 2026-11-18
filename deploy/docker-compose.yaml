@@ -52,7 +52,7 @@
 #
 # The scale readings and DEXA scans are held by the body container, in the PostgreSQL schema "body"
 # with a role and an encryption key of their own: the api cannot read them except by asking the body
-# container, and the body container cannot read the users or the sessions. See docs/17-body-service.md
+# container, and the body container cannot read the users or the sessions. See docs/admin/08-body-service.md
 # for a database that already exists.
 #
 # The database image is ghcr.io/trueforge-org/postgresql (ContainerForge) and the Valkey image is
@@ -69,7 +69,7 @@
 #
 # Pin the version for production, for example DEXAFIX_VERSION=1.2.3 in a .env file next to this file.
 # All containers must run the same version.
-# Documentation: docs/15-split-deployment.md, docs/16-workers.md and docs/17-body-service.md
+# Documentation: docs/admin/06-split-deployment.md, docs/admin/07-workers.md and docs/admin/08-body-service.md
 
 name: dexafix
 
