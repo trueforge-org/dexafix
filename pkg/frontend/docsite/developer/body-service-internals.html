@@ -1,0 +1,11 @@
+<h1 id="body-service-internals">Body service internals</h1>
+<p>How the body service behaves at its edges. Running it is described in <a href="/docs/admin/body-service">Body service</a>.</p>
+<h2 id="limits">Limits</h2>
+<ul>
+<li>A call is not atomic across the two services. An import is applied in steps
+that can be repeated, so a run that stops half way is finished by running it
+again.</li>
+<li>An export is built in memory in the body service and the api process.</li>
+<li>Backups of the two databases are separate: restore them from the same moment, or
+readings of users who were deleted in between wait for the next sweep.</li>
+</ul>

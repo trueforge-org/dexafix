@@ -1,0 +1,104 @@
+<h1 id="estimation-details">Estimation details</h1>
+<p>The summary for users is in <a href="/docs/user/estimates">Estimates</a>.</p>
+<p>Estimates are computed from the stored data. The result is cached per user and
+recalculated when the data or the date changes (see
+<a href="#estimate-cache">Estimate cache</a>). Stored readings are never changed. Each
+field is handled on its own.</p>
+<ol>
+<li><strong>Daily average.</strong> Readings are averaged per day (a calendar day in the user's time zone), for each field and each
+group. A group is a measurement method plus athlete mode. Missing values are
+ignored.</li>
+<li><strong>Most accurate reading.</strong> Each day uses the group whose method ranks
+highest for that field. The default order, most accurate first, is
+hydrostatic, BodPod, caliper, smart scale, tape, visual AI, typed into an
+app (<code>manual-entry</code>). Change it on the
+settings page. A method without a value for the field is skipped, so a
+caliper reading with only body fat does not hide the scale weight. If the
+normal and athlete group of one method both have a value, the one matching
+the user's athlete-mode default wins.</li>
+<li><strong>Rolling average.</strong> Each day is averaged over the real readings within 3
+days before and after it (a 7-day window, shorter at the ends of the series).
+Only real readings count, never days filled in by step 4. If the window has
+at least 3 days with a real reading, the day's value is that average. This
+also applies to a day without a reading of its own, and its origin stays
+<code>interpolated</code> or <code>held</code>. Otherwise a day with a reading keeps that reading.
+Peaks are not capped.</li>
+<li><strong>Missing days.</strong> A day still without a value from step 3 gets a value on a
+straight line between the nearest days that have one (origin <code>interpolated</code>).
+After the last such day, its value is repeated up to today (origin <code>held</code>).
+The held value can therefore be the last average, not the last raw reading.
+This is the per-day series.</li>
+<li><strong>Calibration.</strong> On each DEXA day inside the series, the offset (DEXA minus
+the reading on that day) is recorded for body fat % and bone mass. Every
+group (method and athlete mode) with a reading of that field on the scan day
+gets its own offset. Several readings of one group on one day are averaged
+first. A group without a reading on the scan day gets no offset from that
+scan. A scan with fat mass and weight but no body fat % gets its body fat %
+calculated as fat mass / weight x 100, so it still calibrates body fat %.
+Weight is measured by DEXA but is never corrected. Hydration and visceral
+fat index are never corrected either, because DEXA does not measure them
+here. A scan with no reading of a group on that day cannot calibrate that
+group.</li>
+<li><strong>Estimate.</strong> For each field and day:
+<ul>
+<li>A DEXA value is used as it is (origin <code>dexa</code>).</li>
+<li>Before the first calibration of the day's group the series is corrected
+with that first calibration's offset.</li>
+<li>Between two calibrations of the group the offset is blended with a
+smoothstep curve, <code>w(t) = t²(3 − 2t)</code>, where <code>t</code> is 0 at the earlier scan
+and 1 at the later one: <code>offset = (1 − w) × earlier + w × later</code>. The first
+half stays near the earlier scan, and the second half moves towards the
+later one.</li>
+<li>After the last calibration the last offset is kept.</li>
+<li>A window that mixes methods applies each reading's own offset: the offsets
+of the groups behind the window's real readings are averaged, weighted by
+how many readings each group has in the window. A group without a
+calibration counts as 0.</li>
+<li>Corrected values have <code>corrected: true</code>. Body fat % is kept within 0 to 100
+and bone mass is kept at 0 or more, after the offset is applied.</li>
+<li>Fat mass and fat-free mass are calculated on every day with a weight,
+whether or not a calibration applies. When body fat % is known, fat mass =
+weight x body fat % / 100. When it is not, the fat mass already on that day
+is kept. Fat-free mass = weight - fat mass, so the two always add up to the
+weight. The scale's own fat mass and fat-free mass are used only when they
+cannot be calculated, for example on a day with no weight. A DEXA fat mass
+or fat-free mass value on its own day is used as it is, and the other is
+calculated from it where needed. They are marked <code>corrected: true</code> when
+the value they come from is corrected or from DEXA. They are unmarked only
+for a group with no calibration at all. Lean mass = fat-free mass - bone
+mass, calculated on every day with both. On a day missing either one there
+is no lean mass. A DEXA lean mass value on its own day is used as it is
+(origin <code>dexa</code>). Lean mass is marked <code>corrected: true</code> when the fat-free
+mass or bone mass it comes from is corrected or from DEXA.</li>
+<li>BMI = weight (kg) / height (m)², FMI = fat mass (kg) / height (m)² and
+LMI = lean mass (kg) / height (m)², where lean mass is the fat-free mass
+minus the bone mass. Height comes from the profile in cm. Without a height,
+these three are left out. They are marked <code>corrected: true</code> when the value
+they come from is corrected or from DEXA. The A/G ratio = android fat % /
+gynoid fat %, from DEXA scans that have both values (origin <code>dexa</code> on the
+scan day). After a scan, the latest ratio is repeated (origin <code>held</code>)
+until the next scan with a ratio. There is no value before the first such
+scan.</li>
+</ul>
+</li>
+</ol>
+<h3 id="estimate-cache">Estimate cache</h3>
+<p>Computing the estimates walks a user's whole history, so the result is kept in
+memory per user (for the 32 most recently used users), by the
+<a href="/docs/admin/body-service">body service</a> that computes it. It is reused until
+something it depends on changes, and there is no list of places that have to
+remember to clear it. The cache is tied to three things:</p>
+<ul>
+<li>the user's body version, a counter in the database that every change to the
+user's scans and readings (web, API, imports) increments in the same
+transaction;</li>
+<li>the settings the estimates depend on: time zone, height, method ranking and
+athlete default, which the api process sends with every call;</li>
+<li>the date, since the series runs up to today.</li>
+</ul>
+<p>Because the counter lives in the database, a change made by another process or
+server sharing a Postgres database is seen at once as well. The cache starts
+empty after a restart or upgrade.</p>
+<p><code>GET /api/v1/users/{id}/estimates</code> sends an <code>ETag</code>. A client that sends it back
+in <code>If-None-Match</code> gets <code>304 Not Modified</code> while nothing changed, without the
+server computing or sending anything, which suits dashboards that poll.</p>

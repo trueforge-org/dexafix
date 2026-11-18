@@ -1,0 +1,713 @@
+<h1 id="split-deployment">Split deployment</h1>
+<p><code>dexafix serve</code> runs everything in one process. The same app can also run as
+two processes:</p>
+<ul>
+<li><code>dexafix serve web</code> is the frontend. It renders the pages, serves static
+files and owns the public listeners: plain HTTP, HTTPS and HTTP/3. It has no
+database and no encryption key.</li>
+<li><code>dexafix serve api</code> is the main backend (<code>pkg/backend/main</code>). It owns the database, the encryption
+keys and every security decision. It also runs maintenance: the audit log
+purge and the renewal of the self-signed certificate.</li>
+</ul>
+<p>In the source the two halves are separate packages: <code>pkg/frontend</code> cannot
+import anything under <code>pkg/backend/</code>, the store or a database driver (a test
+checks it), and <code>pkg/shared</code> holds the contract between them.</p>
+<p>Splitting them has two uses. A flood of requests to the frontend cannot starve
+the backend, because each process has its own load budget. And the process
+that faces visitors holds neither the database nor the keys.</p>
+<h2 id="topology">Topology</h2>
+<pre><code class="language-text">                      visitors
+                         |
+                         v
+        reverse proxy (path split, see 03-reverse-proxy.md)
+              |                              |
+        /api/ |                              | everything else
+              v                              v
+   api :8080 (public API)           web :8080 (pages, static files)
+                                             |
+                                             | internal link, /internal/v1
+                                             | service secret, private network
+                                             v
+                                    api :8081 (internal API)
+</code></pre>
+<ul>
+<li>web talks to the api process only over the internal listener. Keep that
+listener on a private network.</li>
+<li>The api process makes no outgoing connection: the sign-in providers and the mail
+server are reached by the <code>oidc</code> and <code>mail</code> <a href="/docs/admin/workers">workers</a>. Run both
+in a split deployment, or provider sign-in and e-mail stop (see
+<a href="#upgrading-from-a-version-without-the-oidc-and-mail-workers">Upgrading</a>).</li>
+<li>Any number of api processes may share one database, and exactly one of them
+runs the maintenance (<code>--maintenance=false</code> on the others). The URL web uses
+for the backend may point at a load balancer in front of them. See
+<a href="#running-more-api-processes">Running more api processes</a>.</li>
+<li>Workers (<code>serve worker</code>) call the same internal listener with the worker
+secret and reach the outside services for the api process. See
+<a href="/docs/admin/workers">Workers</a>.</li>
+<li>The scale readings, DEXA scans and estimates are held by the
+<a href="/docs/admin/body-service">body service</a>, which runs inside the api process unless
+you start <code>serve body</code> and give <code>serve api</code> a <code>--body-url</code>.</li>
+<li>The HTTPS and HTTP/3 listeners belong to web. See
+<a href="#tls-and-http3">TLS and HTTP/3</a>.</li>
+</ul>
+<h2 id="quick-start">Quick start</h2>
+<p>Two processes on one host, for trying it out. Create a service secret, start
+the api process, then the web process:</p>
+<pre><code class="language-bash">dexafix secrets service-secret &gt; service.secret &amp;&amp; chmod 600 service.secret
+
+dexafix serve api --listen 127.0.0.1:8082 --internal-listen 127.0.0.1:8081 \
+  --service-secret-file service.secret
+
+dexafix serve web --listen 127.0.0.1:8080 --backend-url http://127.0.0.1:8081 \
+  --service-secret-file service.secret --api-upstream http://127.0.0.1:8082
+</code></pre>
+<p>Start the api process first. Otherwise web waits for it, see
+<a href="#troubleshooting">Troubleshooting</a>.</p>
+<p>Here no reverse proxy routes <code>/api/</code>, so web passes it on with
+<code>--api-upstream</code>. The api process must then trust web as a proxy. On the Admin
+page, set <strong>Trusted proxies</strong> to <code>loopback</code>. Open <a href="http://localhost:8080">http://localhost:8080</a> and
+create the first account.</p>
+<h2 id="compose-example">Compose example</h2>
+<p>Both services use the same image and the same tag. The api process has the
+database and the key. Only web publishes ports.</p>
+<pre><code class="language-yaml">services:
+  api:
+    image: ghcr.io/trueforge-org/dexafix:&lt;tag&gt;
+    command: [&quot;serve&quot;, &quot;api&quot;]
+    volumes:
+      - dexa-data:/config
+    environment:
+      DEXAFIX_DSN: file:/config/dexafix.db
+      DEXAFIX_ENCRYPTION_KEY_FILE: /config/dexafix.key
+      DEXAFIX_SERVICE_SECRET_FILE: /run/secrets/dexafix_service
+    secrets:
+      - dexafix_service
+    expose:
+      - &quot;8080&quot;
+      - &quot;8081&quot;
+    networks:
+      - internal
+
+  web:
+    image: ghcr.io/trueforge-org/dexafix:&lt;tag&gt;
+    command: [&quot;serve&quot;, &quot;web&quot;]
+    environment:
+      DEXAFIX_BACKEND_URL: http://api:8081
+      DEXAFIX_SERVICE_SECRET_FILE: /run/secrets/dexafix_service
+    secrets:
+      - dexafix_service
+    ports:
+      - &quot;8080:8080&quot;
+      - &quot;8443:8443&quot;
+      - &quot;8443:8443/udp&quot;
+    networks:
+      - internal
+      - default
+
+networks:
+  internal:
+    internal: true
+
+secrets:
+  dexafix_service:
+    file: ./service.secret
+
+volumes:
+  dexa-data:
+</code></pre>
+<p>This example runs the body service inside the api container. The files in
+<code>deploy/</code> run it as a container of its own, with a database role, an encryption
+key and a secret of its own: see <a href="/docs/admin/body-service">Body service</a>.</p>
+<p>The image's default command is <code>serve</code>, which runs one process. The split
+needs the <code>command</code> line for each service.</p>
+<p>This example publishes only web, so the public API is not reachable from
+outside yet. Choose one:</p>
+<ul>
+<li>Put a reverse proxy on the <code>internal</code> network, and route <code>/api/</code> to
+<code>api:8080</code> and everything else to <code>web:8080</code>. See
+<a href="/docs/admin/reverse-proxy#two-processes-path-split">Two processes: path split</a>.</li>
+<li>Set <code>DEXAFIX_API_UPSTREAM: http://api:8080</code> on web. Then list the web
+container's address among the trusted proxies on the Admin page. The
+<code>private</code> keyword covers Docker's bridge ranges.</li>
+</ul>
+<h2 id="the-recommended-deployment-deploy">The recommended deployment: <code>deploy/</code></h2>
+<p><code>deploy/docker-compose.yaml</code> runs everything as containers: PostgreSQL, Valkey,
+the api process, the body service, the web process and one worker container per
+provider. Every link between them is protected by a secret <strong>and</strong> by mutual TLS.
+Two short-lived containers prepare the rest: <code>init</code>, which is <code>dexafix secrets init</code> and makes every password, key, secret and certificate, and <code>db-setup</code>,
+which is <code>dexafix db provision</code> and makes the database roles and the schema.</p>
+<pre><code class="language-bash">cd deploy
+mkdir -m 700 secrets &amp;&amp; sudo chown 568:568 secrets
+docker compose up -d
+</code></pre>
+<p>Open <a href="http://localhost:8080">http://localhost:8080</a> and create the first account: it becomes the
+administrator. No file has to exist before <code>up</code> except that folder, because the
+containers read their secrets from volumes that <code>init</code> fills. <code>init</code> and
+<code>db-setup</code> run again at every <code>docker compose up -d</code>.</p>
+<p>The web container's ports (8080, and 8443 for HTTPS and HTTP/3) are published on
+this machine only (<code>127.0.0.1</code>), so a reverse proxy on the same host or
+<a href="http://localhost:8080">http://localhost:8080</a> works and nothing is open to the network by accident. To
+serve visitors directly, or to reach it from another machine, put
+<code>DEXAFIX_BIND=0.0.0.0</code> (or the address of one network card) in a <code>.env</code> file next
+to the Compose file.</p>
+<h3 id="who-init-runs-as">Who <code>init</code> runs as</h3>
+<p><code>init</code> runs as the unprivileged user <code>568:568</code>, the user of all the other
+containers, with no capabilities. That keeps a root process out of the
+deployment, but it means the folders <code>init</code> writes must already belong to that
+user:</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Folder</th>
+<th>Must be</th>
+<th>Who makes it so</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>./secrets</code> on the host (mounted at <code>/secrets/host</code>)</td>
+<td>Owned by <code>568:568</code>, mode <code>700</code></td>
+<td>You, once: <code>mkdir -m 700 secrets &amp;&amp; sudo chown 568:568 secrets</code>. A folder that Docker makes by itself belongs to root.</td>
+</tr>
+<tr>
+<td>The volumes <code>secrets-api</code>, <code>-web</code>, <code>-worker</code>, <code>-body</code>, <code>-db</code>, <code>-dbsetup</code>, <code>-valkey</code></td>
+<td>Owned by <code>568:568</code></td>
+<td>The image: a new volume copies the owner of its mount point. A volume that an earlier version made may belong to root.</td>
+</tr>
+</tbody>
+</table></div>
+<p>If an owner or a mode would have to change and <code>init</code> is not allowed to change
+it, <code>init</code> stops with an error that says what to do, and nothing else starts:</p>
+<pre><code class="language-text">open /secrets/host/.service_secret.123: permission denied
+
+init runs as 568:568 and may not change the owner or the permissions of this folder. Do one of these, once:
+  - Run init as root this one time. ...
+        docker compose run --rm --user 0:0 init
+  - Or prepare the folder on the host yourself:
+        sudo chown -R 568:568 ./secrets &amp;&amp; sudo chmod 700 ./secrets
+</code></pre>
+<p>You can also skip the preparation and run <code>init</code> as root the first time. As
+root it gives <code>./secrets</code>, the files in it and the volumes to <code>568:568</code> (it has
+the two capabilities it needs for that, <code>CHOWN</code> and <code>DAC_OVERRIDE</code>, and
+nothing else). From then on nothing has to change, so the plain <code>up</code> runs it as
+<code>568:568</code> again:</p>
+<pre><code class="language-bash">cd deploy
+docker compose run --rm --user 0:0 init   # once: fixes the owner of ./secrets and the volumes
+docker compose up -d                      # every time after that
+</code></pre>
+<p>Another user id than <code>568</code> works too (set <code>user:</code> and <code>--chown=</code> of <code>init</code> to
+it, and run the other containers as it), but then the same rule holds.</p>
+<p>What <code>init</code> makes, and where it keeps it:</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Where</th>
+<th>What</th>
+<th>When it changes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>./secrets/</code> on the host</td>
+<td>The database passwords, the connection strings, the Valkey password and the two encryption keys (<code>encryption_key</code>, <code>body_encryption_key</code>)</td>
+<td>Never: a file that exists is kept</td>
+</tr>
+<tr>
+<td>Volume <code>secrets-api</code></td>
+<td>The api's connection string and encryption key, the service, worker and body secrets, the body token signing key, the Valkey URL, the api's certificates</td>
+<td>The secrets and the key are kept; the certificates are new at every run</td>
+</tr>
+<tr>
+<td>Volumes <code>secrets-web</code>, <code>secrets-worker-withings</code>, <code>secrets-worker-strengthlevel</code>, <code>secrets-worker-oidc</code>, <code>secrets-worker-mail</code>, <code>secrets-body</code></td>
+<td>Only what that container needs: its shared secret and its certificates (the body service also gets its connection string and encryption key, and the public half of the signing key)</td>
+<td>As above</td>
+</tr>
+<tr>
+<td>Volumes <code>secrets-db</code>, <code>secrets-dbsetup</code>, <code>secrets-valkey</code></td>
+<td>The superuser's password (the database), the administrator's connection string and the two role passwords (<code>db-setup</code>), the Valkey password</td>
+<td>They follow the files in <code>./secrets</code></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Back up <code>./secrets/encryption_key</code> and <code>./secrets/body_encryption_key</code>
+together with the database.</strong> Without an encryption key the encrypted values
+cannot be read again. They are on the host, so <code>docker compose down -v</code> does not
+delete them. <code>./secrets</code> is private to <code>568:568</code> (mode <code>700</code>); read it with <code>sudo</code>.</p>
+<p>The certificates are valid for 397 days and are replaced at every <code>docker compose up</code>, so run it at least once a year. The CA's private key is thrown away
+as soon as the certificates are made. The containers read changed certificate
+files again within 30 seconds and need no restart. While they do, a process may
+be briefly ahead of the others: expect one <code>bad certificate</code> line in the api's
+log and a <code>could not refresh the settings</code> warning in web's, which heal by
+themselves. The web process and the workers each have a client certificate of
+the same CA (<code>init</code> makes both): it proves the link and names the role, so the web
+process's certificate does not open the workers' door and a worker's does not open
+the web process's, and the service or worker secret proves the role as well.
+Certificates made without a role (<code>secrets mtls</code>, or an older set) open either door. The link to
+the body service has a CA of its own, so a certificate of one link opens nothing
+of the other.</p>
+<p>The database image is <code>ghcr.io/trueforge-org/postgresql</code> (ContainerForge). It
+runs as uid 568 and keeps its data in <code>/config/18</code>, and so do the other images
+of this stack: DexaFix runs as uid 568 too and keeps its data in <code>/config</code>. The
+<code>db-setup</code> container runs <a href="/docs/admin/commands"><code>dexafix db provision</code></a> against it,
+so the application never runs as the superuser <code>postgres</code>. The database
+belongs to <code>dexafix_owner</code>, a role that cannot log in, and only the two roles
+below may connect to it, so a compromised api cannot lock the body service out,
+change the database's settings or drop it. The api's role <code>dexafix</code> works in the
+schema <code>public</code>; the body service's role <code>dexafix_body</code> owns the
+schema <code>body</code> and can use nothing else. Neither is a superuser or a member of any
+other role. The image can make no roles from
+environment variables (its <code>ADDITIONAL_DBS</code> setting creates databases owned by
+the superuser, and nothing else), and it reads the superuser's password from the
+environment only, so the Compose file exports it from the secret file in a small
+<code>entrypoint</code>. <code>db provision</code> can be repeated: what exists is kept and the
+passwords are set again (a database that an earlier version let <code>dexafix</code> own goes to
+<code>dexafix_owner</code>, which is all an upgrade needs: run <code>docker compose up -d</code> again), so a failed start is mended by the next <code>up</code>, and a
+password you changed in <code>./secrets</code> takes effect there too.</p>
+<h3 id="upgrading-from-a-version-without-the-oidc-and-mail-workers">Upgrading from a version without the oidc and mail workers</h3>
+<p>Earlier versions made the connections to the sign-in providers and the SMTP
+server from the api process. Now the <code>oidc</code> and <code>mail</code> workers do. With the
+Compose file in <code>deploy/</code>, <code>docker compose pull &amp;&amp; docker compose up -d</code> is
+enough: <code>init</code> makes their secrets and the two containers start. Without Compose,
+make a worker secret for each (<code>dexafix secrets worker-secret</code>), pass
+<code>oidc=FILE</code> and <code>mail=FILE</code> to <code>serve api</code> (<code>--worker-secret-file</code>), and start
+<code>dexafix serve worker --providers oidc</code> and <code>--providers mail</code> with the matching
+secret on a network that can reach the providers and the mail server. Until you
+do, signing in with a provider fails with &quot;not available right now&quot; and e-mails
+are reported as not sent. Password sign-in is not affected. The database gets a
+new migration (<code>00006</code>) that lets a job belong to no user.</p>
+<p>The Docker daemon may run on another host than your shell (Docker Desktop with a
+dev container). Then a bind mount such as <code>./secrets</code> is not visible to it: use a
+normal host, or put <code>./secrets</code> in a volume as the test setup in
+<code>deploy.instructions.md</code> does.</p>
+<p><code>deploy/secrets/</code> holds every secret of the deployment: it is in <code>.gitignore</code>, and
+must never be committed or shared. Its directory is private (<code>0700</code>); the files in it
+are readable by whoever can enter the directory.</p>
+<h3 id="resource-limits">Resource limits</h3>
+<p>Every container in the Compose file has a ceiling on memory, CPU and processes,
+so that one runaway process (a flood of requests, a very large import, a leak)
+cannot starve the others on the same host. The defaults are generous for a
+household or a small team:</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Container</th>
+<th>Memory</th>
+<th>CPUs</th>
+<th>Processes</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>api</code></td>
+<td>512 MB</td>
+<td>2</td>
+<td>256</td>
+<td>Sign-in work (bcrypt) and the pages' data</td>
+</tr>
+<tr>
+<td><code>body</code></td>
+<td>768 MB</td>
+<td>2</td>
+<td>256</td>
+<td>The estimates: CPU heavy, and it keeps the results of up to 32 users in memory (about 160 MB at most)</td>
+</tr>
+<tr>
+<td><code>web</code></td>
+<td>256 MB</td>
+<td>1</td>
+<td>256</td>
+<td>Pages and static files</td>
+</tr>
+<tr>
+<td><code>worker-withings</code>, <code>worker-strengthlevel</code>, <code>worker-oidc</code>, <code>worker-mail</code></td>
+<td>256 MB</td>
+<td>0.5</td>
+<td>128</td>
+<td>Waiting for jobs and talking to the provider, the sign-in providers or the mail server</td>
+</tr>
+<tr>
+<td><code>db</code></td>
+<td>1 GB</td>
+<td>2</td>
+<td>512</td>
+<td>PostgreSQL, with up to 20 connections each from <code>api</code> and <code>body</code></td>
+</tr>
+<tr>
+<td><code>valkey</code></td>
+<td>512 MB</td>
+<td>1</td>
+<td>128</td>
+<td>At most 256 MB of data (<code>--maxmemory</code>), more while it rewrites its file</td>
+</tr>
+<tr>
+<td><code>init</code>, <code>db-setup</code></td>
+<td>128 MB</td>
+<td>0.5</td>
+<td>64</td>
+<td>They run for a moment and exit</td>
+</tr>
+</tbody>
+</table></div>
+<p>The Go containers also get <code>GOMEMLIMIT</code> at about 80% of their memory limit, so
+the garbage collector works harder before the kernel kills the process. Go also
+reads the CPU limit, so a container limited to one CPU does not start a thread
+pool for sixteen.</p>
+<p>Change a limit in a <code>docker-compose.override.yaml</code> next to the file (Compose
+merges it), and raise <code>GOMEMLIMIT</code> with it:</p>
+<pre><code class="language-yaml">services:
+  body:
+    deploy:
+      resources:
+        limits: {memory: 2G}
+    environment:
+      GOMEMLIMIT: 1600MiB
+</code></pre>
+<p><code>docker stats</code> shows the use against the limit. A container that is killed for
+using too much memory shows <code>OOMKilled: true</code> in <code>docker inspect</code>; raise its
+limit then. Check the PostgreSQL side too: each of <code>api</code> and <code>body</code> opens up to
+20 connections, so the server's <code>max_connections</code> (100 by default) must cover
+every <code>api</code> and <code>body</code> container you run, plus some for yourself.</p>
+<h2 id="status-and-health-checks">Status and health checks</h2>
+<p><strong>The status page.</strong> <code>/status</code> on the web process shows the health of each part:
+the web process itself, the api process, the database, the body service and the
+workers of each provider. It is the same for everybody, signed in or not. It
+shows a state per part and nothing else: no versions, host names, worker names
+or reasons. It answers 503 while a part is down, so a monitor needs no parsing,
+and 200 otherwise. A cache cannot mix visitors up (every response is
+<code>no-store</code>, and the list is identical for all).</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>State</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Operational</td>
+<td>It works.</td>
+</tr>
+<tr>
+<td>Down</td>
+<td>It does not answer. The api process cannot be reached, the database or the body service does not answer within 2 seconds, or workers of a provider registered in the last day but none has asked for work in the last 90 seconds.</td>
+</tr>
+<tr>
+<td>Not in use</td>
+<td>No worker of that provider has registered in the last day. That is not a fault: imports of that provider simply wait until one starts.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A worker gets a new random name every time it starts, so workers of replaced
+containers stay on record for a day. They count for nothing once one worker of
+the provider is running. Give a worker a fixed <code>--worker-id</code> if you want it to
+keep its name.</p>
+<p>The api process keeps its answer for 5 seconds, so a flood of requests to
+<code>/status</code> costs one round of checks per 5 seconds.</p>
+<p>Administrators also get <code>/admin/status</code> (linked from <code>/status</code> and from the
+Admin page): the workers by name, version and last request, and the reason a
+part is down. It needs the same sign-in and second step as the rest of the Admin
+pages.</p>
+<p><strong>Health checks for containers.</strong> The images are <code>scratch</code>: no shell, no curl.
+Three processes have an optional listener that answers <code>/healthz</code> and <code>/readyz</code>
+only:</p>
+<pre><code class="language-bash">dexafix serve api --health-listen 127.0.0.1:8083 ...
+dexafix serve body --health-listen 127.0.0.1:8083 ...
+dexafix serve worker --health-listen 127.0.0.1:8083 ...
+</code></pre>
+<ul>
+<li><code>/healthz</code> answers <code>ok</code> while the process runs.</li>
+<li><code>/readyz</code> answers <code>ok</code> when it can do its work, and 503 <code>not ready</code> otherwise.
+For the api process and the body service that means the database answers. A
+worker is ready once it has registered and has heard from the api process in
+the last 90 seconds. The reason is only in the log, at the debug level.</li>
+</ul>
+<p>The listener needs no secret or certificate, which is why it is a separate one,
+and it answers nothing else. Bind it to the loopback address. The web process
+needs no extra listener: its own <code>/healthz</code> (the process runs) and <code>/readyz</code>
+(it can reach the api process) are on its normal listener.</p>
+<h3 id="profiling">Profiling</h3>
+<p>To see where an api, body or worker process spends its time, start it with
+<code>--pprof</code> (or <code>DEXAFIX_PPROF=true</code>) together with a loopback
+<code>--health-listen</code>:</p>
+<pre><code class="language-bash">dexafix serve api --health-listen 127.0.0.1:8083 --pprof ...
+go tool pprof http://127.0.0.1:8083/debug/pprof/profile?seconds=30
+</code></pre>
+<p>The profiling pages are served on the health listener only, and the process
+refuses to start when <code>--pprof</code> is set without a loopback <code>--health-listen</code>,
+because a profile shows memory and stacks. In a container, run <code>go tool pprof</code>
+from the host through <code>docker exec</code> or a published loopback port. The web
+process has no health listener and no profiling pages. <code>--pprof</code> is off by
+default.</p>
+<p><code>dexafix healthcheck &lt;url&gt;</code> makes one request and exits 0 for a 2xx answer, so
+the container can check itself:</p>
+<pre><code class="language-yaml">healthcheck:
+  test: [&quot;CMD&quot;, &quot;/dexafix&quot;, &quot;healthcheck&quot;, &quot;http://127.0.0.1:8083/readyz&quot;]
+  interval: 10s
+  timeout: 5s
+  retries: 5
+  start_period: 20s
+</code></pre>
+<p><code>deploy/docker-compose.yaml</code> does this for every container and starts them in
+order: the database, the body service, the api process, then the web process and
+the workers, each when the one before is healthy. The api process does not wait
+for the body service in its own <code>/readyz</code>: when the body service is down the
+pages say so (503) and everything else keeps working, and <code>/status</code> shows it.</p>
+<h2 id="valkey">Valkey</h2>
+<p>By default the failed sign-in counters, the single-use values (second-step
+codes, password reset links, and the like) and the sessions are rows in the
+database. Every wrong password is a write and every page of a signed-in visitor
+is a session lookup, so a flood of either is a flood of database work. With
+<a href="https://valkey.io">Valkey</a> (or any Redis-compatible server) the api process keeps
+them there instead and the database sees none of it. It is optional and only
+<code>serve api</code> takes it:</p>
+<pre><code class="language-bash">echo 'redis://:a-long-password@valkey:6379/0' &gt; valkey.url &amp;&amp; chmod 600 valkey.url
+dexafix serve api --valkey-url-file valkey.url ...
+</code></pre>
+<p><code>--valkey-url</code> (<code>DEXAFIX_VALKEY_URL</code>) takes the URL without a password; a
+password on the command line is refused, as for the database. <code>rediss://</code> turns
+on TLS. At start the api process connects and checks that the server answers;
+if it does not, it stops.</p>
+<p>What it holds, and what it does not:</p>
+<ul>
+<li><strong>Held in Valkey:</strong> the failed-attempt counters (one sorted set per login name
+and per client address, the same 15-minute sliding window as in the database)
+the single-use values (one key each, with a life until the value would have
+expired anyway, plus a minute for clock differences) and the sessions (one key
+each, which expires with the session, and an index of every user's sessions so
+that they can all be ended at once). A session holds only who signed in and
+how: the person's name and role are read from the database on every request,
+so a role change or a deleted account takes effect at once.</li>
+<li><strong>Sessions end on purpose, not by a cache.</strong> Signing out, a changed password,
+a password set by an administrator, a reset link and a deleted account each
+end the sessions in Valkey themselves. For the password cases that happens
+before the password is written, so if Valkey cannot be reached the password is
+not changed and the old sessions are not left alive.</li>
+<li><strong>Not held in Valkey:</strong> the job queue and everything else. The estimate cache
+and the sign-in provider discovery cache are in each process's memory, as
+before.</li>
+<li><strong>The three are never mixed.</strong> With Valkey the tables <code>auth_failures</code>,
+<code>used_nonces</code> and <code>sessions</code> stay empty. Several api processes must all use
+it, or none. Turning it on or off forgets who failed lately and <strong>signs
+everybody out</strong>.</li>
+</ul>
+<p><strong>It fails closed.</strong> While Valkey does not answer, every address counts as locked
+out, every single-use value as spent and no session can be read, so nobody can
+sign in or stays signed in (their sessions are there again when it is back). Pages that need
+no sign-in keep working, and <code>/status</code> shows Valkey as down. This is the same
+choice as when the database does not answer: a limit that gives way when its
+store is unreachable is no limit.</p>
+<p><strong>Run it with <code>maxmemory-policy noeviction</code>.</strong> A counter that was evicted would
+let an attacker try again, a nonce that was evicted would let a one-time value
+be used twice, and a session that was evicted would sign somebody out. A full server then refuses writes, which fails closed. Keep the
+append-only file on a volume so a restart keeps the counters.</p>
+<p>The Compose example (<code>deploy/docker-compose.yaml</code>) has it: <code>init</code> makes the
+password (<code>./secrets/valkey_password</code>, kept like the other passwords) and the URL
+for the api container. The <code>valkey</code> container is on a network of its own that
+only the api container shares, and the api container waits for it to be healthy.
+To run the example without Valkey, remove the <code>valkey</code> service, the
+<code>DEXAFIX_VALKEY_URL_FILE</code> line of <code>api</code> and the <code>state</code> network; the same things
+are then rows in the database.</p>
+<h2 id="service-secret">Service secret</h2>
+<p>The web and api processes share a service secret. Web sends it with every
+call to the internal listener, and the api process refuses calls without it.</p>
+<p>Create the file with one command:</p>
+<pre><code class="language-bash">dexafix secrets service-secret &gt; service.secret &amp;&amp; chmod 600 service.secret
+</code></pre>
+<p>The command prints one secret of 64 hexadecimal characters. The file holds one
+secret per line. Blank lines and lines starting with <code>#</code> are ignored. Each
+secret must be at least 32 characters.</p>
+<ul>
+<li>Web sends the <strong>first</strong> line.</li>
+<li>The api process accepts <strong>every</strong> line.</li>
+</ul>
+<p>A group- or world-readable file only logs a warning, because container secret
+mounts are often mode 0444.</p>
+<h3 id="rotating-the-secret">Rotating the secret</h3>
+<p>To rotate, put the new secret on the first line and keep the old one below it:</p>
+<pre><code class="language-text"># service.secret
+&lt;new secret&gt;
+&lt;old secret&gt;
+</code></pre>
+<ol>
+<li>Edit <code>service.secret</code> as above.</li>
+<li>Restart the api process first, so that it accepts both secrets.</li>
+<li>Restart the web process, so that it sends the new secret.</li>
+<li>Remove the old line, and restart the api process again.</li>
+</ol>
+<h2 id="running-more-api-processes">Running more api processes</h2>
+<p>The api process has two listeners, and each can run in its own process:</p>
+<ul>
+<li><code>--listen</code>: the public API, <code>/api/v1</code>, behind the reverse proxy.</li>
+<li><code>--internal-listen</code>: the internal API for web. Keep it on a private network.</li>
+</ul>
+<p>Any number of processes may serve the internal listener, behind a load
+balancer if you like. Exactly one process runs the maintenance (audit purge,
+cleanup of nonces and lock-outs, the self-signed certificate); turn it off with
+<code>--maintenance=false</code> on all the others. Public-only processes turn the internal
+listener off as well:</p>
+<pre><code class="language-bash"># The one api process for web: internal listener and maintenance on
+dexafix serve api --listen :8080 --internal-listen :8081 \
+  --service-secret-file /run/secrets/dexafix_service
+
+# Public-only api processes on the same database
+dexafix serve api --listen :8080 --internal-listen &quot;&quot; --maintenance=false
+</code></pre>
+<p>A public-only process needs no service secret, because it has no internal
+listener.</p>
+<p>Some limits apply:</p>
+<ul>
+<li><strong>Load budgets are per listener.</strong> The public listener admits up to 32
+requests at once (never more than half of the database connections: 2 with
+SQLite, 10 with Postgres), queues 64 and allows 20 requests per second per
+client. The internal listener admits 128, queues 256 and allows 50 requests
+per second per client. So a flood on the public API cannot starve web, and
+it always leaves database connections for it. Excess requests get 503 or 429
+with <code>Retry-After</code>. Password checks for Basic-auth API requests are limited
+to a quarter of the CPUs (at least one) at a time, so a flood of
+credentials cannot use up all the CPU.</li>
+<li><strong>Settings reload.</strong> A process reloads settings that another process changed,
+for example with <code>dexafix settings reset-network</code>, within about 5 seconds.</li>
+<li><strong>State is shared through the database.</strong> Failed-login lock-outs, single-use
+nonces and the Strength Level sync status are stored in the database, so all
+api processes agree. Only caches (estimates) and the de-duplication of noisy
+audit events are per process. A Strength Level sync runs on the backend that
+started it. Only the maintenance process generates or renews a self-signed
+certificate; the others load the stored one. See
+<a href="/docs/admin/limitations-and-security">Limitations and security</a>.</li>
+<li><strong>Database.</strong> SQLite works for two api processes on one host, in WAL mode,
+but it still serialises writes. Use Postgres when isolation or several
+processes matter.</li>
+</ul>
+<h2 id="tls-and-http3">TLS and HTTP/3</h2>
+<p>Web serves HTTPS and HTTP/3. The certificate and its key are stored in the api
+process, and you set them on the Admin page as usual. Web fetches them over the
+internal link. Web follows changes to the settings about every 5 seconds, and at
+once after a save on the Admin page. Web's HTTPS port must be published, for
+example <code>8443:8443</code> and <code>8443:8443/udp</code> in the Compose example.</p>
+<p>The private key crosses the internal link, so the internal link must stay on a
+private network. See <a href="/docs/admin/reverse-proxy#https-http2-and-http3">HTTPS, HTTP/2 and HTTP/3</a>.</p>
+<p>If web terminates TLS itself, a proxy that only passes TCP cannot split the
+paths. Set <code>DEXAFIX_API_UPSTREAM</code> on web, as in the Compose example, or
+terminate TLS at the proxy and split the paths there.</p>
+<h2 id="mutual-tls-between-web-and-api">Mutual TLS between web and api</h2>
+<p>Mutual TLS (mTLS) makes both ends of the internal link prove who they are with
+a certificate. Use it for any link that leaves one host or private network, and
+as defence in depth on one host. The service secret stays required.</p>
+<p>With mTLS the internal listener speaks TLS 1.3 only and refuses plain HTTP. The
+api process accepts only a client certificate issued by a private CA, and web
+checks the api process's certificate against the same CA.</p>
+<h3 id="create-the-certificates">Create the certificates</h3>
+<pre><code class="language-bash">dexafix secrets mtls --dir ./mtls --name api
+</code></pre>
+<p><code>--name</code> is each host name or IP address that web uses to reach the api
+process. Repeat it for each name. <code>localhost</code>, <code>127.0.0.1</code> and <code>::1</code> are always
+included, and at least one <code>--name</code> is required. The command writes:</p>
+<ul>
+<li><code>ca.pem</code>: the CA certificate. Both processes trust it.</li>
+<li><code>api.pem</code> and <code>api.key</code>: the certificate and key of the api process.</li>
+<li><code>web.pem</code> and <code>web.key</code>: the certificate and key of the web process.</li>
+</ul>
+<p>Keys are mode 0600, certificates 0644 and the directory 0700. The command never
+overwrites a file: if any of the five exists, it writes nothing. The CA's
+private key is not kept, so no further certificates can be issued from this CA.
+Leaf certificates are valid for 2 years and the CA for 10 years. To renew,
+create a new set and follow <a href="#rotating-the-certificates">Rotating the certificates</a>.</p>
+<h3 id="start-both-processes">Start both processes</h3>
+<p>On the api host:</p>
+<pre><code class="language-bash">dexafix serve api \
+  --internal-tls-cert-file mtls/api.pem \
+  --internal-tls-key-file mtls/api.key \
+  --internal-tls-client-ca-file mtls/ca.pem \
+  --service-secret-file service.secret
+</code></pre>
+<p>On the web host:</p>
+<pre><code class="language-bash">dexafix serve web --backend-url https://api:8081 \
+  --backend-ca-file mtls/ca.pem \
+  --backend-client-cert-file mtls/web.pem \
+  --backend-client-key-file mtls/web.key \
+  --service-secret-file service.secret
+</code></pre>
+<p>Each flag has an environment variable, see <a href="/docs/admin/configuration">Configuration</a>.</p>
+<ul>
+<li>The api process takes all three <code>--internal-tls-*</code> options or none. It needs
+<code>--internal-listen</code> to be on.</li>
+<li>Web needs an <code>https://</code> URL in <code>--backend-url</code> together with all three
+<code>--backend-*-file</code> options. The files with an <code>http://</code> URL are an error.</li>
+<li>If the name in the backend's certificate is not the host of <code>--backend-url</code>,
+set <code>--backend-server-name</code> to the name in the certificate. An address in
+<code>--backend-url</code> (<code>https://10.0.0.5:8081</code>) is checked against the addresses in
+the certificate in the same way, so the certificate must carry it.</li>
+</ul>
+<h3 id="rotating-the-certificates">Rotating the certificates</h3>
+<p>Both processes read the certificate files again when they change. They check
+every 30 seconds. A broken or half-written file is ignored, and the last good
+one stays in use, so rotating needs no restart. Write the new file next to the
+old one and <code>mv</code> it into place.</p>
+<p>To rotate without a gap, for the CA or a leaf certificate:</p>
+<ol>
+<li>Create the new set: <code>dexafix secrets mtls --dir ./mtls-new --name api</code>.</li>
+<li>Concatenate the old and the new <code>ca.pem</code> into one file, and put that file in
+the CA file of both processes.</li>
+<li>Wait at least 30 seconds.</li>
+<li>Put the new <code>api.pem</code> and <code>api.key</code> in the api process, and the new
+<code>web.pem</code> and <code>web.key</code> in the web process.</li>
+<li>Wait at least 30 seconds, then put only the new <code>ca.pem</code> in the CA file of
+both processes. The old certificates stop working here.</li>
+</ol>
+<h3 id="what-it-protects">What it protects</h3>
+<ul>
+<li>A client without a certificate from the CA cannot reach the internal listener,
+even with the service secret.</li>
+<li>Web checks the name and the server-auth key usage of the api process's
+certificate. An impostor on the network cannot receive the service secret.</li>
+<li>The link is encrypted with TLS 1.3, so sessions, passwords and the TLS private
+key do not cross it in clear.</li>
+</ul>
+<h3 id="what-it-does-not-protect">What it does not protect</h3>
+<ul>
+<li>A stolen web host. Its client key and the service secret let an attacker act
+as web, and web can ask the api process for the TLS private key of the HTTPS
+listener.</li>
+<li>The public listener. mTLS does not apply to it: keep it behind the reverse
+proxy.</li>
+<li>Revocation. There is no certificate revocation list. To cut off a leaked
+client key, rotate the CA as above and drop the old one.</li>
+<li>Key files on disk. Whoever can read <code>web.key</code> and <code>service.secret</code> is web.</li>
+</ul>
+<h3 id="compose">Compose</h3>
+<p><code>deploy/docker-compose.yaml</code> has mutual TLS on by default for both internal
+links (web and workers to api, and api to the body service): the <code>init</code>
+container makes the certificates, see
+<a href="#the-recommended-deployment-deploy">The recommended deployment</a>. Nothing more
+is needed. To make a set by hand for another setup, use <code>dexafix secrets mtls</code>
+as above, or <code>dexafix secrets init</code> for everything at once.</p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="the-backend-refused-the-service-secret">The backend refused the service secret</h3>
+<p>Web stops at start with <code>the backend refused the service secret: use the same --service-secret-file as the api process</code>. The api process answered 401.</p>
+<ul>
+<li>The two processes read different files, or the api process does not have
+the first line of the web process's file. Give both the same file, or finish
+the rotation in the order above.</li>
+</ul>
+<h3 id="web-waits-for-the-api-process">Web waits for the api process</h3>
+<p>At start, web logs <code>waiting for the backend</code> and retries for up to 60 seconds.
+If the api process does not answer in that time, web stops with <code>the backend is not available</code>.</p>
+<ul>
+<li>Start the api process first, or let the container restart.</li>
+<li>Check <code>--backend-url</code>, such as <code>http://api:8081</code>, from the web host or
+container. The name must resolve, and the api process must not run with
+<code>--internal-listen &quot;&quot;</code>.</li>
+</ul>
+<h3 id="the-503-page">The 503 page</h3>
+<p>Visitors see <code>dexafix is temporarily unavailable, try again in a moment</code> with
+<code>Retry-After: 5</code>. Web could not get an answer from the api process: it is down,
+unreachable, or shedding load on its internal listener. Web logs
+<code>backend request failed</code>.</p>
+<p>A plain <code>Service Unavailable</code> with <code>Retry-After: 2</code> means web itself is at its
+limit on requests in progress. That is normal under a flood. If it lasts, limit
+the traffic at the reverse proxy.</p>
+<p>A <code>429 Too Many Requests</code> comes from web's per-client rate limit, or from its
+limit on sign-in attempts. Wait for <code>Retry-After</code>.</p>
+<h3 id="versions-differ">Versions differ</h3>
+<p>Web logs <code>the frontend and the backend run different versions: deploy both from the same release</code> at start. Deploy both processes from the same image tag.</p>

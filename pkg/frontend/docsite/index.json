@@ -1,0 +1,931 @@
+{
+  "sections": [
+    {
+      "id": "user",
+      "title": "Using DexaFix",
+      "blurb": "For people who use the web interface: accounts, scans, readings, estimates and imports.",
+      "pages": [
+        {
+          "slug": "using-the-app",
+          "title": "Using the app",
+          "toc": [
+            {
+              "id": "getting-started",
+              "title": "Getting started",
+              "level": 2
+            },
+            {
+              "id": "the-pages",
+              "title": "The pages",
+              "level": 2
+            },
+            {
+              "id": "settings",
+              "title": "Settings",
+              "level": 2
+            },
+            {
+              "id": "profile-settings",
+              "title": "Profile",
+              "level": 3
+            },
+            {
+              "id": "time-zone",
+              "title": "Time zone",
+              "level": 3
+            },
+            {
+              "id": "password",
+              "title": "Password",
+              "level": 3
+            },
+            {
+              "id": "recent-account-activity",
+              "title": "Recent account activity",
+              "level": 3
+            },
+            {
+              "id": "the-footer-terms-and-privacy",
+              "title": "The footer, terms and privacy",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "accounts-and-sign-in",
+          "title": "Accounts and sign-in",
+          "toc": [
+            {
+              "id": "data-export",
+              "title": "Your data",
+              "level": 2
+            },
+            {
+              "id": "registration",
+              "title": "Signing up",
+              "level": 2
+            },
+            {
+              "id": "linked-accounts",
+              "title": "Sign-in providers and linked accounts",
+              "level": 2
+            },
+            {
+              "id": "access-tokens",
+              "title": "Access tokens",
+              "level": 2
+            },
+            {
+              "id": "password-login",
+              "title": "Password sign-in",
+              "level": 2
+            },
+            {
+              "id": "password-reset",
+              "title": "Password reset",
+              "level": 2
+            },
+            {
+              "id": "two-step",
+              "title": "Two-step verification",
+              "level": 2
+            },
+            {
+              "id": "turning-it-on",
+              "title": "Turning it on",
+              "level": 3
+            },
+            {
+              "id": "signing-in",
+              "title": "Signing in",
+              "level": 3
+            },
+            {
+              "id": "administrators",
+              "title": "Administrators",
+              "level": 3
+            },
+            {
+              "id": "passkeys-doc",
+              "title": "Passkeys",
+              "level": 2
+            },
+            {
+              "id": "adding-and-managing",
+              "title": "Adding and managing",
+              "level": 3
+            },
+            {
+              "id": "signing-in-with-a-passkey",
+              "title": "Signing in with a passkey",
+              "level": 3
+            },
+            {
+              "id": "requirements",
+              "title": "Requirements",
+              "level": 3
+            },
+            {
+              "id": "other-places-passkeys-count",
+              "title": "Other places passkeys count",
+              "level": 3
+            },
+            {
+              "id": "storage-and-security",
+              "title": "Storage and security",
+              "level": 3
+            },
+            {
+              "id": "storage-and-rate-limiting",
+              "title": "Storage and rate limiting",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "estimates",
+          "title": "Estimates",
+          "toc": [
+            {
+              "id": "how-it-works",
+              "title": "How it works",
+              "level": 2
+            },
+            {
+              "id": "how-estimates-work",
+              "title": "The daily estimates step by step",
+              "level": 2
+            },
+            {
+              "id": "estimate-badges",
+              "title": "Reading the table",
+              "level": 2
+            },
+            {
+              "id": "method-accuracy",
+              "title": "Method accuracy",
+              "level": 2
+            },
+            {
+              "id": "athlete-mode",
+              "title": "Athlete mode",
+              "level": 2
+            },
+            {
+              "id": "calibration",
+              "title": "Calibration",
+              "level": 2
+            },
+            {
+              "id": "estimate-range",
+              "title": "Range and columns",
+              "level": 2
+            },
+            {
+              "id": "estimate-columns",
+              "title": "Columns",
+              "level": 3
+            },
+            {
+              "id": "resync-day",
+              "title": "Per-day re-import and Strength Level",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "withings-and-strength-level",
+          "title": "Withings and Strength Level",
+          "toc": [
+            {
+              "id": "withings",
+              "title": "Withings",
+              "level": 2
+            },
+            {
+              "id": "withings-import",
+              "title": "Connecting and importing",
+              "level": 3
+            },
+            {
+              "id": "bulk-import",
+              "title": "Bulk import",
+              "level": 3
+            },
+            {
+              "id": "re-import-one-day",
+              "title": "Re-import one day",
+              "level": 3
+            },
+            {
+              "id": "strengthlevel",
+              "title": "Strength Level",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "privacy-and-encryption",
+          "title": "Encryption and privacy"
+        },
+        {
+          "slug": "scans-and-readings",
+          "title": "DEXA scans and scale readings",
+          "toc": [
+            {
+              "id": "dexa-page",
+              "title": "DEXA scans",
+              "level": 2
+            },
+            {
+              "id": "auto-fill",
+              "title": "Gray values (calculated while typing)",
+              "level": 3
+            },
+            {
+              "id": "scale-page",
+              "title": "Scale readings",
+              "level": 2
+            },
+            {
+              "id": "measurement-method",
+              "title": "Measurement method",
+              "level": 3
+            },
+            {
+              "id": "scale-athlete",
+              "title": "Athlete mode on a reading",
+              "level": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "admin",
+      "title": "Running a server",
+      "blurb": "For the administrator who installs, configures and runs DexaFix.",
+      "pages": [
+        {
+          "slug": "getting-started",
+          "title": "Getting started",
+          "toc": [
+            {
+              "id": "quick-start",
+              "title": "Quick start",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "configuration",
+          "title": "Configuration",
+          "toc": [
+            {
+              "id": "settings-on-the-admin-page",
+              "title": "Settings on the Admin page",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "commands",
+          "title": "Commands",
+          "toc": [
+            {
+              "id": "server-commands",
+              "title": "Server commands",
+              "level": 2
+            },
+            {
+              "id": "database-commands",
+              "title": "Database commands",
+              "level": 2
+            },
+            {
+              "id": "account-commands",
+              "title": "Account commands",
+              "level": 2
+            },
+            {
+              "id": "settings-recovery",
+              "title": "Settings recovery",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "database",
+          "title": "Database",
+          "toc": [
+            {
+              "id": "moving-from-sqlite-to-postgres",
+              "title": "Moving from SQLite to Postgres",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "reverse-proxy",
+          "title": "Running behind a reverse proxy",
+          "toc": [
+            {
+              "id": "trusted-proxies-and-base-url",
+              "title": "Trusted proxies and base URL",
+              "level": 2
+            },
+            {
+              "id": "examples",
+              "title": "Examples",
+              "level": 2
+            },
+            {
+              "id": "proxy-protocol",
+              "title": "PROXY protocol",
+              "level": 2
+            },
+            {
+              "id": "https-http2-and-http3",
+              "title": "HTTPS, HTTP/2 and HTTP/3",
+              "level": 2
+            },
+            {
+              "id": "behind-a-cdn-or-caching-proxy",
+              "title": "Behind a CDN or caching proxy",
+              "level": 2
+            },
+            {
+              "id": "two-processes-path-split",
+              "title": "Two processes: path split",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "split-deployment",
+          "title": "Split deployment",
+          "toc": [
+            {
+              "id": "topology",
+              "title": "Topology",
+              "level": 2
+            },
+            {
+              "id": "quick-start",
+              "title": "Quick start",
+              "level": 2
+            },
+            {
+              "id": "compose-example",
+              "title": "Compose example",
+              "level": 2
+            },
+            {
+              "id": "the-recommended-deployment-deploy",
+              "title": "The recommended deployment: deploy/",
+              "level": 2
+            },
+            {
+              "id": "who-init-runs-as",
+              "title": "Who init runs as",
+              "level": 3
+            },
+            {
+              "id": "upgrading-from-a-version-without-the-oidc-and-mail-workers",
+              "title": "Upgrading from a version without the oidc and mail workers",
+              "level": 3
+            },
+            {
+              "id": "resource-limits",
+              "title": "Resource limits",
+              "level": 3
+            },
+            {
+              "id": "status-and-health-checks",
+              "title": "Status and health checks",
+              "level": 2
+            },
+            {
+              "id": "profiling",
+              "title": "Profiling",
+              "level": 3
+            },
+            {
+              "id": "valkey",
+              "title": "Valkey",
+              "level": 2
+            },
+            {
+              "id": "service-secret",
+              "title": "Service secret",
+              "level": 2
+            },
+            {
+              "id": "rotating-the-secret",
+              "title": "Rotating the secret",
+              "level": 3
+            },
+            {
+              "id": "running-more-api-processes",
+              "title": "Running more api processes",
+              "level": 2
+            },
+            {
+              "id": "tls-and-http3",
+              "title": "TLS and HTTP/3",
+              "level": 2
+            },
+            {
+              "id": "mutual-tls-between-web-and-api",
+              "title": "Mutual TLS between web and api",
+              "level": 2
+            },
+            {
+              "id": "create-the-certificates",
+              "title": "Create the certificates",
+              "level": 3
+            },
+            {
+              "id": "start-both-processes",
+              "title": "Start both processes",
+              "level": 3
+            },
+            {
+              "id": "rotating-the-certificates",
+              "title": "Rotating the certificates",
+              "level": 3
+            },
+            {
+              "id": "what-it-protects",
+              "title": "What it protects",
+              "level": 3
+            },
+            {
+              "id": "what-it-does-not-protect",
+              "title": "What it does not protect",
+              "level": 3
+            },
+            {
+              "id": "compose",
+              "title": "Compose",
+              "level": 3
+            },
+            {
+              "id": "troubleshooting",
+              "title": "Troubleshooting",
+              "level": 2
+            },
+            {
+              "id": "the-backend-refused-the-service-secret",
+              "title": "The backend refused the service secret",
+              "level": 3
+            },
+            {
+              "id": "web-waits-for-the-api-process",
+              "title": "Web waits for the api process",
+              "level": 3
+            },
+            {
+              "id": "the-503-page",
+              "title": "The 503 page",
+              "level": 3
+            },
+            {
+              "id": "versions-differ",
+              "title": "Versions differ",
+              "level": 3
+            }
+          ]
+        },
+        {
+          "slug": "workers",
+          "title": "Workers",
+          "toc": [
+            {
+              "id": "single-process-and-split-deployment",
+              "title": "Single process and split deployment",
+              "level": 2
+            },
+            {
+              "id": "start-a-worker",
+              "title": "Start a worker",
+              "level": 2
+            },
+            {
+              "id": "sign-in-providers-and-e-mail",
+              "title": "Sign-in providers and e-mail",
+              "level": 2
+            },
+            {
+              "id": "settings-on-the-admin-page",
+              "title": "Settings on the Admin page",
+              "level": 2
+            },
+            {
+              "id": "when-nothing-happens",
+              "title": "When nothing happens",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "body-service",
+          "title": "Body service",
+          "toc": [
+            {
+              "id": "what-it-separates",
+              "title": "What it separates",
+              "level": 2
+            },
+            {
+              "id": "how-a-call-is-protected",
+              "title": "How a call is protected",
+              "level": 2
+            },
+            {
+              "id": "start-it",
+              "title": "Start it",
+              "level": 2
+            },
+            {
+              "id": "postgresql-role-and-schema",
+              "title": "PostgreSQL role and schema",
+              "level": 3
+            },
+            {
+              "id": "keys",
+              "title": "Keys",
+              "level": 2
+            },
+            {
+              "id": "rotating-the-secret-and-the-token-key",
+              "title": "Rotating the secret and the token key",
+              "level": 2
+            },
+            {
+              "id": "mutual-tls",
+              "title": "Mutual TLS",
+              "level": 2
+            },
+            {
+              "id": "deleting-users",
+              "title": "Deleting users",
+              "level": 2
+            },
+            {
+              "id": "when-the-body-service-is-down",
+              "title": "When the body service is down",
+              "level": 2
+            },
+            {
+              "id": "management-commands",
+              "title": "Management commands",
+              "level": 2
+            },
+            {
+              "id": "moving-to-this-layout",
+              "title": "Moving to this layout",
+              "level": 2
+            },
+            {
+              "id": "troubleshooting",
+              "title": "Troubleshooting",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "the-admin-page",
+          "title": "The Admin page",
+          "toc": [
+            {
+              "id": "admin-status",
+              "title": "Server status",
+              "level": 2
+            },
+            {
+              "id": "admin-users",
+              "title": "Users",
+              "level": 2
+            },
+            {
+              "id": "strengthlevel-permissions",
+              "title": "Strength Level permissions",
+              "level": 3
+            },
+            {
+              "id": "admin-signup",
+              "title": "New accounts",
+              "level": 2
+            },
+            {
+              "id": "admin-password-login",
+              "title": "Password sign-in",
+              "level": 2
+            },
+            {
+              "id": "admin-two-step",
+              "title": "Two-step verification",
+              "level": 2
+            },
+            {
+              "id": "providers",
+              "title": "Sign-in providers",
+              "level": 2
+            },
+            {
+              "id": "admin-providers",
+              "title": "The provider form, field by field",
+              "level": 3
+            },
+            {
+              "id": "withings-app",
+              "title": "Withings application",
+              "level": 2
+            },
+            {
+              "id": "withings-workers",
+              "title": "Withings workers and automatic imports",
+              "level": 2
+            },
+            {
+              "id": "admin-network",
+              "title": "Network and retention",
+              "level": 2
+            },
+            {
+              "id": "admin-analytics",
+              "title": "Analytics and ads",
+              "level": 2
+            },
+            {
+              "id": "admin-email",
+              "title": "E-mail",
+              "level": 2
+            },
+            {
+              "id": "admin-tls",
+              "title": "HTTPS, HTTP/2 and HTTP/3",
+              "level": 2
+            },
+            {
+              "id": "admin-workers",
+              "title": "Workers",
+              "level": 2
+            },
+            {
+              "id": "audit-log",
+              "title": "Audit log",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "encryption-key",
+          "title": "The encryption key",
+          "toc": [
+            {
+              "id": "rotating-the-key",
+              "title": "Rotating the key",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "limitations-and-security",
+          "title": "Limitations and security"
+        }
+      ]
+    },
+    {
+      "id": "developer",
+      "title": "Developing DexaFix",
+      "blurb": "For people who change the code or write scripts against the JSON API.",
+      "pages": [
+        {
+          "slug": "development",
+          "title": "Development",
+          "toc": [
+            {
+              "id": "layout",
+              "title": "Layout",
+              "level": 2
+            },
+            {
+              "id": "guidance-for-ai-coding-agents",
+              "title": "Guidance for AI coding agents",
+              "level": 2
+            },
+            {
+              "id": "schema-changes",
+              "title": "Schema changes",
+              "level": 2
+            },
+            {
+              "id": "adding-an-importer",
+              "title": "Adding an importer",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "json-api",
+          "title": "JSON API",
+          "toc": [
+            {
+              "id": "authentication",
+              "title": "Authentication",
+              "level": 2
+            },
+            {
+              "id": "import-endpoint",
+              "title": "Import endpoint",
+              "level": 2
+            },
+            {
+              "id": "other-routes",
+              "title": "Other routes",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "estimation-details",
+          "title": "Estimation details",
+          "toc": [
+            {
+              "id": "estimate-cache",
+              "title": "Estimate cache",
+              "level": 3
+            }
+          ]
+        },
+        {
+          "slug": "body-service-internals",
+          "title": "Body service internals",
+          "toc": [
+            {
+              "id": "limits",
+              "title": "Limits",
+              "level": 2
+            }
+          ]
+        },
+        {
+          "slug": "ci-and-releases",
+          "title": "CI and releases",
+          "toc": [
+            {
+              "id": "badges-paste-into-readmemd",
+              "title": "Badges (paste into README.md)",
+              "level": 2
+            },
+            {
+              "id": "ci-and-releases-1",
+              "title": "CI and releases",
+              "level": 2
+            },
+            {
+              "id": "cutting-a-release",
+              "title": "Cutting a release",
+              "level": 3
+            },
+            {
+              "id": "dependency-updates",
+              "title": "Dependency updates",
+              "level": 3
+            },
+            {
+              "id": "container",
+              "title": "Container",
+              "level": 3
+            },
+            {
+              "id": "required-configuration",
+              "title": "Required configuration",
+              "level": 3
+            }
+          ]
+        },
+        {
+          "slug": "key-rotation-design",
+          "title": "Encryption key check and key rotation",
+          "toc": [
+            {
+              "id": "where-we-were",
+              "title": "Where we were",
+              "level": 2
+            },
+            {
+              "id": "key-check",
+              "title": "Key check",
+              "level": 2
+            },
+            {
+              "id": "rotation",
+              "title": "Rotation",
+              "level": 2
+            },
+            {
+              "id": "stored-format",
+              "title": "Stored format",
+              "level": 3
+            },
+            {
+              "id": "configuration",
+              "title": "Configuration",
+              "level": 3
+            },
+            {
+              "id": "dexafix-db-rekey",
+              "title": "dexafix db rekey",
+              "level": 3
+            },
+            {
+              "id": "e-mail-lookup-across-a-rotation",
+              "title": "E-mail lookup across a rotation",
+              "level": 3
+            },
+            {
+              "id": "cookie-and-session-keys",
+              "title": "Cookie and session keys",
+              "level": 3
+            },
+            {
+              "id": "decision-no-automatic-rotation",
+              "title": "Decision: no automatic rotation",
+              "level": 2
+            },
+            {
+              "id": "open-questions",
+              "title": "Open questions",
+              "level": 2
+            },
+            {
+              "id": "tests",
+              "title": "Tests",
+              "level": 2
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "anchors": {
+    "access-tokens": "user/accounts-and-sign-in",
+    "accounts": "user/accounts-and-sign-in",
+    "admin-analytics": "admin/the-admin-page",
+    "admin-email": "admin/the-admin-page",
+    "admin-network": "admin/the-admin-page",
+    "admin-password-login": "admin/the-admin-page",
+    "admin-providers": "admin/the-admin-page",
+    "admin-signup": "admin/the-admin-page",
+    "admin-status": "admin/the-admin-page",
+    "admin-tls": "admin/the-admin-page",
+    "admin-two-step": "admin/the-admin-page",
+    "admin-users": "admin/the-admin-page",
+    "admin-workers": "admin/the-admin-page",
+    "athlete-mode": "user/estimates",
+    "audit-log": "admin/the-admin-page",
+    "auto-fill": "user/scans-and-readings",
+    "calibration": "user/estimates",
+    "data-export": "user/accounts-and-sign-in",
+    "dexa-page": "user/scans-and-readings",
+    "estimate-badges": "user/estimates",
+    "estimate-columns": "user/estimates",
+    "estimate-range": "user/estimates",
+    "how-estimates-work": "user/estimates",
+    "linked-accounts": "user/accounts-and-sign-in",
+    "measurement-method": "user/scans-and-readings",
+    "method-accuracy": "user/estimates",
+    "passkeys-doc": "user/accounts-and-sign-in",
+    "password": "user/using-the-app",
+    "password-login": "user/accounts-and-sign-in",
+    "password-reset": "user/accounts-and-sign-in",
+    "profile-settings": "user/using-the-app",
+    "provider-allow-signup": "admin/the-admin-page",
+    "provider-apple": "admin/the-admin-page",
+    "provider-client-id": "admin/the-admin-page",
+    "provider-client-secret": "admin/the-admin-page",
+    "provider-issuer": "admin/the-admin-page",
+    "provider-name-claim": "admin/the-admin-page",
+    "provider-oauth2": "admin/the-admin-page",
+    "provider-scopes": "admin/the-admin-page",
+    "provider-slug": "admin/the-admin-page",
+    "provider-subject-claim": "admin/the-admin-page",
+    "provider-type": "admin/the-admin-page",
+    "providers": "admin/the-admin-page",
+    "registration": "user/accounts-and-sign-in",
+    "resync-day": "user/estimates",
+    "scale-athlete": "user/scans-and-readings",
+    "scale-page": "user/scans-and-readings",
+    "strengthlevel": "user/withings-and-strength-level",
+    "strengthlevel-permissions": "admin/the-admin-page",
+    "time-zone": "user/using-the-app",
+    "two-step": "user/accounts-and-sign-in",
+    "withings": "user/withings-and-strength-level",
+    "withings-app": "admin/the-admin-page",
+    "withings-import": "user/withings-and-strength-level",
+    "withings-workers": "admin/the-admin-page"
+  }
+}

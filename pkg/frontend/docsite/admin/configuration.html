@@ -1,0 +1,326 @@
+<h1 id="configuration">Configuration</h1>
+<p>Each <code>serve</code> flag has an environment variable. A flag on the command line
+overrides the variable. The same holds for <code>serve web</code> and <code>serve api</code>, the two
+processes of a <a href="/docs/admin/split-deployment">split deployment</a>. <code>serve body</code> is the
+<a href="/docs/admin/body-service">body service</a>, a third kind of process.</p>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Environment variable</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--listen</code></td>
+<td><code>DEXAFIX_LISTEN</code></td>
+<td><code>:8080</code></td>
+<td>Address to listen on for plain HTTP. For <code>serve api</code>, the public API instead.</td>
+</tr>
+<tr>
+<td><code>--db-driver</code></td>
+<td><code>DEXAFIX_DB_DRIVER</code></td>
+<td><code>sqlite</code></td>
+<td><code>sqlite</code> or <code>postgres</code>.</td>
+</tr>
+<tr>
+<td><code>--dsn</code></td>
+<td><code>DEXAFIX_DSN</code></td>
+<td><code>file:dexafix.db</code></td>
+<td>Database connection string. A string with a password is refused on the command line: use the variable or <code>--dsn-file</code>.</td>
+</tr>
+<tr>
+<td><code>--dsn-file</code></td>
+<td><code>DEXAFIX_DSN_FILE</code></td>
+<td>empty</td>
+<td>File holding the connection string.</td>
+</tr>
+<tr>
+<td><code>--auto-migrate</code></td>
+<td><code>DEXAFIX_AUTO_MIGRATE</code></td>
+<td><code>true</code></td>
+<td>Apply pending migrations on startup; when <code>false</code>, <code>serve</code> fails if any are pending.</td>
+</tr>
+<tr>
+<td><code>--force-password-login</code></td>
+<td><code>DEXAFIX_FORCE_PASSWORD_LOGIN</code></td>
+<td><code>false</code></td>
+<td>Keep password sign-in on, to recover from a lockout.</td>
+</tr>
+<tr>
+<td><code>--encryption-key-file</code></td>
+<td><code>DEXAFIX_ENCRYPTION_KEY_FILE</code></td>
+<td><code>dexafix.key</code></td>
+<td>Key file for encrypted values. Created if missing, but only for a database without encrypted values.</td>
+</tr>
+<tr>
+<td>(none)</td>
+<td><code>DEXAFIX_ENCRYPTION_KEY</code></td>
+<td>unset</td>
+<td>Key itself, overrides the key file. No flag.</td>
+</tr>
+<tr>
+<td><code>--encryption-key-previous-file</code></td>
+<td><code>DEXAFIX_ENCRYPTION_KEY_PREVIOUS_FILE</code></td>
+<td>empty</td>
+<td>File with earlier keys, one per line, for a key rotation.</td>
+</tr>
+<tr>
+<td>(none)</td>
+<td><code>DEXAFIX_ENCRYPTION_KEY_PREVIOUS</code></td>
+<td>unset</td>
+<td>Earlier keys, comma separated, for a key rotation. No flag.</td>
+</tr>
+<tr>
+<td><code>--backend-url</code></td>
+<td><code>DEXAFIX_BACKEND_URL</code></td>
+<td>empty</td>
+<td><code>serve web</code> only. Required: the internal address of the api process, such as <code>http://api:8081</code>.</td>
+</tr>
+<tr>
+<td><code>--service-secret-file</code></td>
+<td><code>DEXAFIX_SERVICE_SECRET_FILE</code></td>
+<td>empty</td>
+<td><code>serve web</code>, and <code>serve api</code> when the internal listener is on. Required there. The shared secret, see <a href="/docs/admin/split-deployment#service-secret">Split deployment</a>.</td>
+</tr>
+<tr>
+<td><code>--worker-secret-file</code></td>
+<td><code>DEXAFIX_WORKER_SECRET_FILE</code></td>
+<td>empty</td>
+<td><code>serve api</code> when the internal listener is on, and <code>serve worker</code>. Secret of one provider's <a href="/docs/admin/workers">workers</a>; must differ from the service secret. On <code>serve api</code> it is <code>PROVIDERS=FILE</code>, repeated once for each provider (variable <code>DEXAFIX_WORKER_SECRET_FILES</code>, entries separated by <code>;</code>), and a secret opens that provider's jobs only.</td>
+</tr>
+<tr>
+<td><code>--internal-listen</code></td>
+<td><code>DEXAFIX_INTERNAL_LISTEN</code></td>
+<td><code>:8081</code></td>
+<td><code>serve api</code> only. Internal API for the web process; keep it on a private network. Empty turns it off.</td>
+</tr>
+<tr>
+<td><code>--maintenance</code></td>
+<td><code>DEXAFIX_MAINTENANCE</code></td>
+<td><code>true</code></td>
+<td><code>serve api</code> only. Runs the audit log purge and certificate renewal. Turn it off on all but one api process.</td>
+</tr>
+<tr>
+<td><code>--api-upstream</code></td>
+<td><code>DEXAFIX_API_UPSTREAM</code></td>
+<td>empty</td>
+<td><code>serve web</code> only. Passes <code>/api/</code> on to the api process's public listener, for setups without a proxy that routes by path. Off by default.</td>
+</tr>
+<tr>
+<td><code>--internal-tls-cert-file</code></td>
+<td><code>DEXAFIX_INTERNAL_TLS_CERT_FILE</code></td>
+<td>empty</td>
+<td><code>serve api</code> only. Server certificate of the internal listener. Set it with <code>--internal-tls-key-file</code> and <code>--internal-tls-client-ca-file</code>, or none. See <a href="/docs/admin/split-deployment#mutual-tls-between-web-and-api">Mutual TLS</a>.</td>
+</tr>
+<tr>
+<td><code>--internal-tls-key-file</code></td>
+<td><code>DEXAFIX_INTERNAL_TLS_KEY_FILE</code></td>
+<td>empty</td>
+<td><code>serve api</code> only. Private key of the certificate above.</td>
+</tr>
+<tr>
+<td><code>--internal-tls-client-ca-file</code></td>
+<td><code>DEXAFIX_INTERNAL_TLS_CLIENT_CA_FILE</code></td>
+<td>empty</td>
+<td><code>serve api</code> only. CA that issues the certificates of the web process. The internal listener then requires a client certificate from it.</td>
+</tr>
+<tr>
+<td><code>--backend-ca-file</code></td>
+<td><code>DEXAFIX_BACKEND_CA_FILE</code></td>
+<td>empty</td>
+<td><code>serve web</code> only. CA that must have issued the certificate of the api process. Use with an <code>https://</code> <code>--backend-url</code>. See <a href="/docs/admin/split-deployment#mutual-tls-between-web-and-api">Mutual TLS</a>.</td>
+</tr>
+<tr>
+<td><code>--backend-client-cert-file</code></td>
+<td><code>DEXAFIX_BACKEND_CLIENT_CERT_FILE</code></td>
+<td>empty</td>
+<td><code>serve web</code> only. Client certificate that web presents to the api process.</td>
+</tr>
+<tr>
+<td><code>--backend-client-key-file</code></td>
+<td><code>DEXAFIX_BACKEND_CLIENT_KEY_FILE</code></td>
+<td>empty</td>
+<td><code>serve web</code> only. Private key of the client certificate above.</td>
+</tr>
+<tr>
+<td><code>--backend-server-name</code></td>
+<td><code>DEXAFIX_BACKEND_SERVER_NAME</code></td>
+<td>empty</td>
+<td><code>serve web</code> only. Name the api process's certificate must carry, if it is not the host of <code>--backend-url</code>.</td>
+</tr>
+<tr>
+<td><code>--body-url</code></td>
+<td><code>DEXAFIX_BODY_URL</code></td>
+<td>empty</td>
+<td><code>serve api</code> only. Address of a <a href="/docs/admin/body-service">body service</a> in its own process, such as <code>http://body:8082</code>. Empty runs the body service inside the api process.</td>
+</tr>
+<tr>
+<td><code>--body-secret-file</code></td>
+<td><code>DEXAFIX_BODY_SECRET_FILE</code></td>
+<td>empty</td>
+<td><code>serve api</code> with <code>--body-url</code>, and <code>serve body</code>. Secret they share, one per line (the api process sends the first, the body service accepts every line). Must differ from the service and worker secrets.</td>
+</tr>
+<tr>
+<td><code>--body-token-key-file</code></td>
+<td><code>DEXAFIX_BODY_TOKEN_KEY_FILE</code></td>
+<td>empty</td>
+<td><code>serve api</code> with <code>--body-url</code>. Private key that signs the tokens for the body service (<code>secrets body-token-key</code>).</td>
+</tr>
+<tr>
+<td><code>--body-ca-file</code></td>
+<td><code>DEXAFIX_BODY_CA_FILE</code></td>
+<td>empty</td>
+<td><code>serve api</code> only. CA that must have issued the body service's certificate. Use with an <code>https://</code> <code>--body-url</code>, together with the two files below.</td>
+</tr>
+<tr>
+<td><code>--body-client-cert-file</code></td>
+<td><code>DEXAFIX_BODY_CLIENT_CERT_FILE</code></td>
+<td>empty</td>
+<td><code>serve api</code> only. Client certificate that the api process presents to the body service.</td>
+</tr>
+<tr>
+<td><code>--body-client-key-file</code></td>
+<td><code>DEXAFIX_BODY_CLIENT_KEY_FILE</code></td>
+<td>empty</td>
+<td><code>serve api</code> only. Private key of the client certificate above.</td>
+</tr>
+<tr>
+<td><code>--body-server-name</code></td>
+<td><code>DEXAFIX_BODY_SERVER_NAME</code></td>
+<td>empty</td>
+<td><code>serve api</code> only. Name the body service's certificate must carry, if it is not the host of <code>--body-url</code>.</td>
+</tr>
+<tr>
+<td><code>--listen</code> (<code>serve body</code>)</td>
+<td><code>DEXAFIX_BODY_LISTEN</code></td>
+<td><code>:8082</code></td>
+<td><code>serve body</code> only. Address of the body service; keep it on a private network.</td>
+</tr>
+<tr>
+<td><code>--health-listen</code></td>
+<td><code>DEXAFIX_HEALTH_LISTEN</code></td>
+<td>empty (off)</td>
+<td><code>serve api</code>, <code>serve body</code> and <code>serve worker</code>. A listener that answers <code>/healthz</code> and <code>/readyz</code> only, for a container health check, such as <code>127.0.0.1:8083</code>. See <a href="/docs/admin/split-deployment#status-and-health-checks">Status and health checks</a>.</td>
+</tr>
+<tr>
+<td><code>--pprof</code></td>
+<td><code>DEXAFIX_PPROF</code></td>
+<td>off</td>
+<td><code>serve api</code>, <code>serve body</code> and <code>serve worker</code>. Also serves Go profiling data under <code>/debug/pprof/</code> on the <code>--health-listen</code> listener, which must then be a loopback address (the process refuses to start otherwise). See <a href="/docs/admin/split-deployment#profiling">Profiling</a>.</td>
+</tr>
+<tr>
+<td><code>--valkey-url</code></td>
+<td><code>DEXAFIX_VALKEY_URL</code></td>
+<td>empty (off)</td>
+<td><code>serve api</code> only. Keep the failed sign-in counters, single-use values and sessions in Valkey (<code>redis://host:6379/0</code>, <code>rediss://</code> for TLS) instead of the database. A password in the URL is refused on the command line: use the file. See <a href="/docs/admin/split-deployment#valkey">Valkey</a>.</td>
+</tr>
+<tr>
+<td><code>--valkey-url-file</code></td>
+<td><code>DEXAFIX_VALKEY_URL_FILE</code></td>
+<td>empty</td>
+<td><code>serve api</code> only. File with the Valkey URL, which may hold the password: <code>redis://:password@host:6379/0</code>.</td>
+</tr>
+<tr>
+<td><code>--body-token-public-key-file</code></td>
+<td><code>DEXAFIX_BODY_TOKEN_PUBLIC_KEY_FILE</code></td>
+<td>empty</td>
+<td><code>serve body</code> only. Required. Public key(s) of the api process's token key, one per line (<code>secrets body-token-public</code>).</td>
+</tr>
+<tr>
+<td><code>--body-tls-cert-file</code></td>
+<td><code>DEXAFIX_BODY_TLS_CERT_FILE</code></td>
+<td>empty</td>
+<td><code>serve body</code> only. Serve over mutual TLS: certificate of the service. Set it with <code>--body-tls-key-file</code> and <code>--body-tls-client-ca-file</code>, or none.</td>
+</tr>
+<tr>
+<td><code>--body-tls-key-file</code></td>
+<td><code>DEXAFIX_BODY_TLS_KEY_FILE</code></td>
+<td>empty</td>
+<td><code>serve body</code> only. Private key of the certificate above.</td>
+</tr>
+<tr>
+<td><code>--body-tls-client-ca-file</code></td>
+<td><code>DEXAFIX_BODY_TLS_CLIENT_CA_FILE</code></td>
+<td>empty</td>
+<td><code>serve body</code> only. CA that issues the api process's client certificate.</td>
+</tr>
+<tr>
+<td><code>--without-body</code></td>
+<td><code>DEXAFIX_WITHOUT_BODY</code></td>
+<td><code>false</code></td>
+<td><code>serve api</code> (needs <code>--body-url</code>) and the <code>db</code>, <code>user</code> and <code>settings</code> commands. This database does not hold the scale readings and DEXA scans because a body service of its own does; keeps the commands from creating their tables here.</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>serve body</code> takes the database and key flags too, for the database and key of the
+body service. It has no <code>--maintenance</code>, and its <code>--auto-migrate</code> migrates the
+body database only.</p>
+<p><code>serve web</code> has no database and no encryption key, so it has no database or key
+flags. If <code>DEXAFIX_DSN_FILE</code> or <code>DEXAFIX_ENCRYPTION_KEY</code> is set for it, it
+logs a warning and ignores the variable. The database and key flags belong to
+<code>serve api</code>.</p>
+<p><code>DEXAFIX_FORCE_PASSWORD_LOGIN</code> counts as set only when it is exactly <code>true</code>.
+<code>1</code> or <code>TRUE</code> leaves it off.</p>
+<h2 id="settings-on-the-admin-page">Settings on the Admin page</h2>
+<p>Some settings are not flags. They are stored in the database, encrypted like
+the other settings, and take effect at once, without a restart. Administrators
+change them on the <a href="/docs/user/using-the-app">Admin page</a>:</p>
+<ul>
+<li><strong>Network and retention</strong>
+<ul>
+<li>Base URL, such as <code>https://dexa.example.com</code>. Empty by default.</li>
+<li>Trusted proxies. Empty by default, which trusts nobody. See <a href="/docs/admin/reverse-proxy">Running behind a reverse proxy</a>.</li>
+<li>Accept the PROXY protocol from the trusted proxies. Off by default. See <a href="/docs/admin/reverse-proxy#proxy-protocol">PROXY protocol</a>.</li>
+<li>Allow sign-in providers on private network addresses. Off by default. See <a href="/docs/admin/limitations-and-security">Outgoing connections</a>.</li>
+<li>Allow the mail server on a private network address. Off by default, and separate from the one for providers.</li>
+<li><strong>Upgrading:</strong> a sign-in provider or mail server that runs on a private address (<code>10.x</code>, <code>172.16.x</code>–<code>172.31.x</code>, <code>192.168.x</code>, <code>100.64.x</code>, <code>fc00::/7</code>) stops working until you turn on the setting for it; password sign-in keeps working, so you can still reach the Admin page.</li>
+<li>Keep the audit log for N days. 365 by default; <code>0</code> keeps it forever.</li>
+<li>Remind me to rotate the encryption key after N days. Empty or <code>0</code> never reminds. Rotation stays manual.</li>
+</ul>
+</li>
+<li><strong>E-mail</strong>: SMTP server, port (587 by default), encryption (<code>starttls</code> by default, <code>tls</code>, or <code>none</code> for a server on localhost only), user name, password (stored encrypted, never shown again) and sender address. See <a href="/docs/user/accounts-and-sign-in#password-reset">Password reset</a>.</li>
+<li><strong>HTTPS, HTTP/2 and HTTP/3</strong>: certificate, HTTPS port (8443 by default) and HTTP/3. Plain HTTP stays on <code>--listen</code>. See <a href="/docs/admin/reverse-proxy#https-http2-and-http3">HTTPS, HTTP/2 and HTTP/3</a>.</li>
+<li><strong>Analytics and ads</strong>: off by default. A Scarf pixel ID (a UUID), a Google Analytics measurement ID (<code>G-…</code>) and a Google AdSense publisher ID (<code>ca-pub-…</code>). When one is set, a visitor who is <strong>not signed in</strong> is asked, on the sign-in page, the documentation, the status page and the terms and privacy pages, whether to accept it. Nothing is loaded from Scarf or Google before they press Accept, signed-in people never get it, and the footer's <strong>Privacy choices</strong> reopens the question. The sign-in page never offers AdSense (it widens the script policy to inline scripts, and the page asks for passwords), only Scarf and Google Analytics. On those pages the content security policy allows the hosts of the services that are on; AdSense also needs inline scripts and images from any HTTPS address, so turn it on only if you accept that. The <a href="https://github.com/trueforge-org/dexafix/blob/main/pkg/frontend/templates/privacy.html">privacy policy</a> (<code>/privacy</code> in the app) describes it to visitors. Below those fields, an <strong>ads.txt</strong> text box is served publicly at <code>/ads.txt</code> on the site root (404 while empty); ad networks such as AdSense look for it there, so the app must be served at the root of its host. It loads nothing for visitors and needs no consent. The ad wiring follows Google's published requirements and has not been tried against a live AdSense account.</li>
+</ul>
+<p>There are no flags or environment variables for these settings, and none for
+SMTP. If <code>DEXAFIX_TRUSTED_PROXIES</code>, <code>DEXAFIX_BASE_URL</code> or
+<code>DEXAFIX_AUDIT_RETENTION_DAYS</code> is still set, the server logs a warning that it
+is ignored. If a wrong base URL or PROXY protocol setting locks you out, see
+<a href="/docs/admin/commands#settings-recovery">Settings recovery</a>.</p>
+<p>The remaining flags are the ones the server needs before it can open the
+database: the listen address, the database, the encryption key and
+<code>--auto-migrate</code>.</p>
+<ul>
+<li><code>LOGLEVEL</code> sets the log level: <code>trace</code>, <code>debug</code>, <code>info</code>, <code>warn</code>, <code>error</code>,
+<code>fatal</code> or <code>panic</code>. The default is <code>info</code>.</li>
+<li><code>LOGFORMAT</code> sets the format of the log on stdout: <code>console</code> (the default,
+readable lines) or <code>json</code> (one JSON object per line, for a log collector, with
+<code>time</code>, <code>level</code>, <code>message</code> and, for <code>serve</code>, <code>service</code> and the fields of the
+event).</li>
+<li>Colour and the short time of day are used only when stdout is a terminal, so
+<code>docker logs</code> and files stay plain. <code>NO_COLOR</code> (any value) or <code>DEBUG</code> (any
+value) turns the colour off on a terminal too; neither changes the log level.</li>
+</ul>
+<p>Every process says which one it is. A line of <code>serve api</code> looks like this, and
+the combined <code>dexafix serve</code> has no prefix:</p>
+<pre><code class="language-text">2026-11-10T11:39:12Z INF api │ serving the backend db=postgres internal=:8081 public=
+</code></pre>
+<p>The banner (<code>DexaFix 1.2.3 · api</code>) goes to stderr, in the console format only, and
+a process logs <code>shutting down</code> and <code>stopped</code> when it is stopped by a signal. In
+the Compose file Docker keeps at most three files of 10 MB per container.</p>
+<p>Postgres example:</p>
+<pre><code class="language-bash">export DEXAFIX_DSN=postgres://user:pass@localhost/dexafix
+go run . serve --db-driver postgres
+</code></pre>
+<p><strong>Secrets are never accepted as command-line flags</strong>, because other users of the
+machine can read them with <code>ps</code> and shells keep them in their history. A
+connection string with a password comes from the environment or from a file
+(<code>--dsn-file</code>, <code>--from-dsn-file</code>, <code>--to-dsn-file</code>, <code>--admin-dsn-file</code>, or the matching
+<code>DEXAFIX_*_FILE</code> variables), which works well with Docker and Kubernetes
+secrets. A plain <code>--dsn file:path.db</code> without a password is fine. Passing a
+password in a flag makes the command fail with a message that says so. The
+encryption key has no flag either (see <a href="/docs/user/privacy-and-encryption">Encryption</a>).</p>
+<p><code>dexafix info</code> prints information about the binary.</p>

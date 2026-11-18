@@ -1,0 +1,194 @@
+<h1 id="body-service">Body service</h1>
+<p>The body service holds the scale readings and the DEXA scans, computes the
+<a href="/docs/user/estimates">estimates</a> from them and decides what an import from Withings
+stores. It knows nothing about people: no sign-in, no sessions, no e-mail. The
+api process authenticates people and calls the body service for the data of one
+user at a time.</p>
+<p>You can ignore this page if you run <code>dexafix serve</code>, or <code>serve api</code> without
+<code>--body-url</code>. Then the body service runs inside that process, on the same
+database, and nothing needs to be set up. Run it as a process of its own when you
+want a leak of one database or one host to give away only half of the data.</p>
+<h2 id="what-it-separates">What it separates</h2>
+<div class="scroll"><table>
+<thead>
+<tr>
+<th></th>
+<th>api process (main backend)</th>
+<th>body service</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Holds</td>
+<td>users, sessions, settings, audit log, provider tokens, the job queue</td>
+<td>scale readings, DEXA scans, the estimate cache</td>
+</tr>
+<tr>
+<td>Database</td>
+<td>the main database</td>
+<td>its own PostgreSQL schema and role, or its own SQLite file</td>
+</tr>
+<tr>
+<td>Encryption key</td>
+<td>its own</td>
+<td>its own</td>
+</tr>
+<tr>
+<td>Can reach</td>
+<td>both</td>
+<td>only its own database</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>The readings and scans are encrypted with a key that the api process does not
+hold (see <a href="#keys">Keys</a>).</li>
+<li>With PostgreSQL, the body service connects as a role that sees the schema
+<code>body</code> and nothing else, and the api role has no rights in that schema. The
+deployment example sets this up.</li>
+<li>Heavy work (estimates over years of readings, imports) runs in the body
+service with its own limits, so it cannot slow down sign-in and the pages.</li>
+</ul>
+<p>A compromised api process still reaches all data, because it is the one that asks
+the body service for it. The separation protects against the leak of one
+database, one backup or one host, not against a break-in to the api process.</p>
+<h2 id="how-a-call-is-protected">How a call is protected</h2>
+<p>Every call from the api process to the body service carries two things:</p>
+<ul>
+<li>the <strong>body secret</strong>, a file both processes share, like the
+<a href="/docs/admin/split-deployment#service-secret">service secret</a>;</li>
+<li>a <strong>token</strong> that the api process signs for that one call. It names one user and
+one scope (<code>read</code>, <code>write</code> or <code>admin</code>), lives for 60 seconds at most and carries
+the user's time zone, height, method ranking and athlete default, which the
+estimates need.</li>
+</ul>
+<p>The api process signs with a private key. The body service holds only the public
+key, so it can check tokens but never make one. A token for user 1 opens nothing
+of user 2, a <code>read</code> token cannot write, and only an <code>admin</code> token can remove a
+user's data. The two processes need clocks within a few seconds of each other.</p>
+<h2 id="start-it">Start it</h2>
+<p>The recommended way is the
+<a href="/docs/admin/split-deployment#the-recommended-deployment-deploy">recommended deployment</a>:
+its <code>init</code> container (<code>dexafix secrets init</code>) creates everything below, including the
+certificates, and its <code>db-setup</code> container (<code>dexafix db provision</code>) creates the PostgreSQL roles and schema. To run it by hand, make the secrets first. All of them are files:</p>
+<pre><code class="language-bash">dexafix secrets body-secret &gt; body.secret &amp;&amp; chmod 600 body.secret
+dexafix secrets body-token-key &gt; body-token.key &amp;&amp; chmod 600 body-token.key
+dexafix secrets body-token-public --key-file body-token.key &gt; body-token.pub
+</code></pre>
+<p><code>body-token.key</code> goes to the api process only. <code>body-token.pub</code> and
+<code>body.secret</code> go to the body service, and <code>body.secret</code> to the api process too.
+The body secret must differ from the service secret and from the worker secret:
+<code>serve api</code> refuses to start otherwise. The key files carry a label
+(<code>ed25519-private:</code> or <code>ed25519-public:</code>), and <code>serve body</code> refuses a private key
+where the public one belongs.</p>
+<p>Start the body service, with a database and an encryption key of its own:</p>
+<pre><code class="language-bash">dexafix serve body --listen :8082 \
+  --db-driver postgres --dsn-file body.dsn \
+  --encryption-key-file body.key \
+  --body-secret-file body.secret \
+  --body-token-public-key-file body-token.pub
+</code></pre>
+<p>Then point the api process at it:</p>
+<pre><code class="language-bash">dexafix serve api --internal-listen :8081 \
+  --service-secret-file service.secret --worker-secret-file withings=withings.secret --worker-secret-file strengthlevel=strengthlevel.secret \
+  --db-driver postgres --dsn-file main.dsn --encryption-key-file main.key \
+  --body-url http://body:8082 \
+  --body-secret-file body.secret --body-token-key-file body-token.key
+</code></pre>
+<p>With <code>--body-url</code> the api process does not create or use the tables of the body
+service in its own database. Keep the body service's port on a network that only
+the api process can reach. All flags are in <a href="/docs/admin/configuration">Configuration</a>.</p>
+<h3 id="postgresql-role-and-schema">PostgreSQL role and schema</h3>
+<p>The Compose example creates them with <code>dexafix db provision</code> (the <code>db-setup</code>
+container). For a database that already exists you can run that command with an
+administrator's connection string, or run this once as the database owner, with
+your own password:</p>
+<pre><code class="language-sql">CREATE ROLE dexafix_body LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '&lt;password&gt;';
+CREATE SCHEMA body AUTHORIZATION dexafix_body;
+ALTER ROLE dexafix_body SET search_path = body;
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+</code></pre>
+<p>The body service's connection string then selects the schema, for example
+<code>postgres://dexafix_body:&lt;password&gt;@db:5432/dexafix?search_path=body&amp;sslmode=disable</code>.
+The service migrates its own tables into that schema on start, and keeps its
+migration count in its own table (<code>goose_body_version</code>).</p>
+<p>With SQLite, give the body service a file of its own, for example
+<code>--dsn file:/config/body.db</code>.</p>
+<h2 id="keys">Keys</h2>
+<p>In the combined process the key of the readings and scans is derived from the
+encryption key with HKDF, under a label of its own, so one key file covers both
+and <code>db rekey</code> rotates both. A value sealed for the readings does not open with
+the key of the rest.</p>
+<p>A body service in its own process has its own <code>--encryption-key-file</code> (or
+<code>DEXAFIX_ENCRYPTION_KEY</code>), checked against its database like the main key (see
+<a href="/docs/user/privacy-and-encryption">Encryption</a>). Use the same file as the api process to get the
+same key, or a different one to keep a leak of one key from opening the other. A
+wrong key is refused at start with a message that says so. The body key is a
+second key to back up: <strong>without it the readings and scans cannot be read.</strong></p>
+<p>Rotate it with the body service stopped, pointing <code>--dsn</code> and the key flags at
+the body service's database and key:</p>
+<pre><code class="language-bash">DEXAFIX_ENCRYPTION_KEY=&lt;new&gt; DEXAFIX_ENCRYPTION_KEY_PREVIOUS=&lt;old&gt; \
+  dexafix db rekey --body --dsn-file body.dsn --dry-run
+</code></pre>
+<p>Run it again without <code>--dry-run</code> to re-encrypt. It completes or changes nothing,
+and can be repeated.</p>
+<h2 id="rotating-the-secret-and-the-token-key">Rotating the secret and the token key</h2>
+<ul>
+<li><strong>Body secret.</strong> Both files hold one secret per line. Add a new first line to the
+api process's file and keep the old line in the body service's file until all
+api processes use the new one: the api process sends the first line, the body
+service accepts every line. Then remove the old line.</li>
+<li><strong>Token key.</strong> Make a new key pair. Add the new public key as another line in the
+body service's <code>body-token.pub</code>, restart it, switch the api process to the new
+private key, then remove the old public key line.</li>
+</ul>
+<h2 id="mutual-tls">Mutual TLS</h2>
+<p>The link can be wrapped in mutual TLS, on top of the secret and the tokens. Make a
+set for this link, with a CA of its own, so that a certificate of the link between
+web and api opens nothing here:</p>
+<pre><code class="language-bash">dexafix secrets mtls --link body --dir ./mtls-body --name body
+</code></pre>
+<p>It writes <code>ca.pem</code>, <code>body.pem</code>, <code>body.key</code>, <code>api-client.pem</code> and
+<code>api-client.key</code>. Give the body service
+<code>--body-tls-cert-file</code>, <code>--body-tls-key-file</code> and <code>--body-tls-client-ca-file</code>, and
+the api process an <code>https://</code> <code>--body-url</code> with <code>--body-ca-file</code>,
+<code>--body-client-cert-file</code> and <code>--body-client-key-file</code>. Either all three files are
+given or none, and an <code>https://</code> address needs all of them.</p>
+<h2 id="deleting-users">Deleting users</h2>
+<p>When an administrator deletes a user, the api process also removes the user's
+readings and scans from the body service. If the body service cannot be reached
+then, the data stays until the maintenance loop finds it: every six hours it
+compares the users that have data with the users that exist and removes the data
+of those that are gone. User ids are never reused, so this is safe.</p>
+<h2 id="when-the-body-service-is-down">When the body service is down</h2>
+<p>Everything that needs readings, scans or estimates answers with a 503 page or
+status: the Scale, DEXA and Estimates pages, the export, the readings and scans
+endpoints of the <a href="/docs/developer/json-api">JSON API</a>. A Withings import waits: the worker
+reports its result again until the body service answers, and the job is not lost.
+Signing in, settings, the admin pages and the rest keep working, and the Admin
+page shows the two counts as &quot;Unavailable&quot;.</p>
+<h2 id="management-commands">Management commands</h2>
+<p>The <code>db</code>, <code>user</code> and <code>settings</code> commands open the main database. When the body
+service has its own database, give them <code>--without-body</code> (or
+<code>DEXAFIX_WITHOUT_BODY=true</code>), or <code>db migrate up</code> creates empty body tables in the
+main database. <code>db copy</code> is for databases that hold both. The body service
+migrates its own database on start (<code>--auto-migrate</code>, on by default).</p>
+<h2 id="moving-to-this-layout">Moving to this layout</h2>
+<p>A database from an earlier build is not migrated: the readings and scans are now
+stored in a different form, and a body database of its own starts empty. Export
+each user's data first and import it afterwards (see
+<a href="/docs/user/accounts-and-sign-in#data-export">Accounts and sign-in</a>).</p>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<ul>
+<li><strong>401 from the body service, in the api log as &quot;refused a call&quot;.</strong> The secrets
+differ, the public key does not belong to the private key, or the clocks differ
+by more than a few seconds. Check the files and the time.</li>
+<li><strong>&quot;the body encryption key does not match this database&quot;.</strong> Another key file
+than the one that made the readings. Restore the right one, or keep the old key
+as a previous key and run <code>db rekey --body</code>.</li>
+<li><strong>&quot;the readings and scans are unavailable&quot;.</strong> The api process cannot reach the
+body service: check <code>--body-url</code>, the network and that the service runs.</li>
+<li><strong><code>serve api</code> says the secrets must differ.</strong> The service, worker and body
+secrets each open a different door. Create a new one with
+<code>dexafix secrets body-secret</code>.</li>
+</ul>
