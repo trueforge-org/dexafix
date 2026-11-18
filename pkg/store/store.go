@@ -255,6 +255,12 @@ type Store interface {
 	// the same slug cannot inherit them.
 	DeleteAuthProvider(ctx context.Context, slug string) error
 
+	// The endpoints and signing keys a worker fetched from an identity provider. ErrNotFound until
+	// a worker has fetched them. DeleteAuthProvider removes them with the provider.
+	GetAuthProviderMetadata(ctx context.Context, slug string) (models.AuthProviderMetadata, error)
+	PutAuthProviderMetadata(ctx context.Context, m models.AuthProviderMetadata) error
+	DeleteAuthProviderMetadata(ctx context.Context, slug string) error
+
 	// AddAuditEvent records an event; ID and At are set.
 	AddAuditEvent(ctx context.Context, e *models.AuditEvent) error
 	// ListAuditEvents returns events newest first.
@@ -278,6 +284,9 @@ type Store interface {
 	// every state change is conditional on the state and lease token it expects.
 	EnqueueJob(ctx context.Context, j models.NewJob) (job models.Job, created bool, err error)
 	GetJob(ctx context.Context, publicID string) (models.Job, error)
+	// ClearJobResult drops the result of a job that ended, once whoever waited for it has read it (a
+	// sign-in's identity is for one callback and is not kept with the job history).
+	ClearJobResult(ctx context.Context, publicID string) error
 	ListJobs(ctx context.Context, f models.JobFilter) ([]models.Job, error)
 	LastFinishedStates(ctx context.Context, kind string, n int, since time.Time) ([]string, error)
 	LeaseJob(ctx context.Context, req models.LeaseRequest, at time.Time) (job models.Job, ok bool, err error)

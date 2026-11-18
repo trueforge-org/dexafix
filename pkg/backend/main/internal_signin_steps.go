@@ -388,20 +388,12 @@ func (s *Backend) internalProviderStart(w http.ResponseWriter, r *http.Request) 
 		internalError(w, err)
 		return
 	}
-	cfg, _, err := s.oauthConfig(ctx, p, r)
-	if err != nil {
-		log.Error().Err(err).Str("provider", p.Slug).Msg("provider setup failed")
-		signInFail(w, p.Label+" sign-in is not available right now.", http.StatusBadGateway)
-		return
-	}
 	st := providerState{Slug: p.Slug, Verifier: oauth2.GenerateVerifier()}
 	st.State = randomHex(16)
 	st.Nonce = randomHex(16)
 	if linking {
 		st.Link = u.ID
 	}
-	sealed := s.sealState(st)
-	setProviderCookie(w, r, sealed, int(providerStateTTL.Seconds()), p.Kind == models.ProviderKindApple)
 	opts := []oauth2.AuthCodeOption{oauth2.S256ChallengeOption(st.Verifier)}
 	if p.Kind != models.ProviderKindOAuth2 {
 		opts = append(opts, oidc.Nonce(st.Nonce))
@@ -409,7 +401,14 @@ func (s *Backend) internalProviderStart(w http.ResponseWriter, r *http.Request) 
 	if p.Kind == models.ProviderKindApple {
 		opts = append(opts, oauth2.SetAuthURLParam("response_mode", "form_post"))
 	}
-	signInRedirect(w, cfg.AuthCodeURL(st.State, opts...))
+	authURL, err := s.authCodeURL(ctx, p, externalURL(r, "/auth/"+p.Slug+"/callback"), st.State, opts...)
+	if err != nil {
+		log.Error().Err(err).Str("provider", p.Slug).Msg("provider setup failed")
+		signInFail(w, p.Label+" sign-in is not available right now.", http.StatusBadGateway)
+		return
+	}
+	setProviderCookie(w, r, s.sealState(st), int(providerStateTTL.Seconds()), p.Kind == models.ProviderKindApple)
+	signInRedirect(w, authURL)
 }
 
 func providerCallbackInvalid(w http.ResponseWriter) {
@@ -454,10 +453,10 @@ func (s *Backend) internalProviderCallback(w http.ResponseWriter, r *http.Reques
 		s.internalProviderFailed(w, st, p.Label+" did not complete the sign-in.")
 		return
 	}
-	subject, claims, err := s.exchangeCode(ctx, p, r, st)
+	subject, claims, err := s.exchangeCode(ctx, p, externalURL(r, "/auth/"+slug+"/callback"), r.FormValue("code"), st)
 	if err != nil {
 		log.Warn().Err(err).Str("provider", slug).Msg("provider sign-in failed")
-		s.internalProviderFailed(w, st, "Could not sign in with "+p.Label+".")
+		s.internalProviderFailed(w, st, providerFailureMessage(p, err))
 		return
 	}
 	id, err := s.store.GetIdentity(ctx, slug, subject)
@@ -501,6 +500,21 @@ func (s *Backend) internalProviderCallback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.internalSignIn(w, r, u, slug)
+}
+
+// providerFailureMessage is what a visitor is told when the sign-in did not complete. A worker that is
+// missing or a provider that is slow says so; a rotation of the provider's keys is worth asking
+// again for, because a worker is already fetching them.
+func providerFailureMessage(p models.AuthProvider, err error) string {
+	switch {
+	case errors.Is(err, errNoWorker), errors.Is(err, errKindPaused):
+		return p.Label + " sign-in is not available right now."
+	case errors.Is(err, errTooManyJobs):
+		return p.Label + " sign-in is busy. Try again in a moment."
+	case err.Error() == errStaleKeys.Error():
+		return p.Label + " changed its signing keys. Try signing in again in a moment."
+	}
+	return "Could not sign in with " + p.Label + "."
 }
 
 func (s *Backend) internalProviderFailed(w http.ResponseWriter, st providerState, msg string) {

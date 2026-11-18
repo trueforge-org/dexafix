@@ -11,8 +11,10 @@ import (
 
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
+	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
 	"github.com/trueforge-org/dexafix/pkg/store"
 	"github.com/trueforge-org/dexafix/pkg/store/sqlstore"
+	"github.com/trueforge-org/dexafix/pkg/workers/builtin"
 )
 
 // rig is a backend with nothing in front of it, called the way the frontend calls it: through the
@@ -86,6 +88,34 @@ func newRigOn(t *testing.T, st store.Store, real *sqlstore.Store, opts ...Option
 	b.DisableInternalBudget()
 	b.SetServiceSecrets(rigSecret)
 	return &rig{t: t, b: b, srv: &Server{Backend: b}, st: real, h: b.InternalHandler()}
+}
+
+// newProviderRig is newRig with the built-in workers running, for the tests that sign in with a
+// sign-in provider: the backend connects to nothing itself, a worker does it for the backend.
+func newProviderRig(t *testing.T, opts ...Option) *rig {
+	t.Helper()
+	g := newRig(t, opts...)
+	g.startWorkers()
+	return g
+}
+
+// startWorkers runs the built-in workers against the rig's backend until the test ends.
+func (g *rig) startWorkers() {
+	t := g.t
+	t.Helper()
+	secret := testRandomHex(32)
+	if err := setAllWorkerSecrets(g.b, secret); err != nil {
+		t.Fatal(err)
+	}
+	wc, err := workerapi.New("http://backend.internal", &http.Client{Transport: apiclient.InProcess(g.b.InternalHandler())}, secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop, err := startTestWorkers(g.b, wc, builtin.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
 }
 
 // do sends one request. A body that is not a string is sent as JSON.

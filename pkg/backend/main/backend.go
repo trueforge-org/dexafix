@@ -18,7 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/rs/zerolog/log"
 
 	"github.com/trueforge-org/dexafix/pkg/shared/edge"
@@ -81,7 +80,6 @@ type Backend struct {
 	authChain      []authStep
 	cop            atomic.Pointer[copEntry] // same-origin check of the public listener
 	cookieKey      []byte
-	httpClient     *http.Client
 	serviceSecrets [][32]byte    // accepted by the internal API, see internal.go
 	publicSlots    int           // in-flight limit of the public API, from the database pool
 	bcryptSlots    chan struct{} // limits password checks running at the same time
@@ -105,10 +103,8 @@ type Backend struct {
 	sessions   sessionStore    // the sessions: the database, or Valkey with WithState
 	noCertGen  bool            // do not generate or renew the self-signed certificate on our own
 
-	oidcMu      sync.Mutex
-	oidcCache   map[string]*oidc.Provider
-	oidcFlights map[string]*oidcFlight
-	oidcFailed  map[string]oidcFailure
+	// keyRefresh remembers when a provider's signing keys were last asked for (a throttle, not state).
+	keyRefresh sync.Map
 
 	statusCache statusCache // the last answer of /status, kept for a few seconds
 	state       StateServer // the Valkey server of WithState, or nil: then the database holds the state
@@ -147,9 +143,6 @@ func NewBackend(st store.Store, opts ...Option) (*Backend, error) {
 	s := &Backend{
 		bg:          jobs.New(),
 		store:       st,
-		oidcCache:   map[string]*oidc.Provider{},
-		oidcFlights: map[string]*oidcFlight{},
-		oidcFailed:  map[string]oidcFailure{},
 		sessions:    st,
 		limiter:     newFailureLimiter(st),
 		nonces:      spentNonces{st},
@@ -157,7 +150,6 @@ func NewBackend(st store.Store, opts ...Option) (*Backend, error) {
 		bcryptSlots: make(chan struct{}, max(1, runtime.GOMAXPROCS(0)/4)),
 		auditNoise:  newAuditNoise(),
 	}
-	s.httpClient = s.newProviderClient()
 	for _, o := range opts {
 		o(s)
 	}
@@ -167,6 +159,8 @@ func NewBackend(st store.Store, opts ...Option) (*Backend, error) {
 	// The providers that ship with the program; their settings are read below.
 	s.addWorkerProvider(withingsProvider())
 	s.addWorkerProvider(strengthLevelProviderSpec())
+	s.addWorkerProvider(oidcProviderSpec())
+	s.addWorkerProvider(mailProviderSpec())
 	s.authChain = []authStep{{methodSession, s.authSession}, {methodToken, s.authBearer}, {methodToken, s.authBasic}}
 	ctx := context.Background()
 	var err error

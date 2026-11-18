@@ -8,4 +8,6 @@ func Kind(provider, action string) string { return provider + "." + action }
 const (
 	ProviderWithings      = "withings"
 	ProviderStrengthLevel = "strengthlevel"
+	ProviderOIDC          = "oidc" // sign-in providers: OpenID Connect, Apple and plain OAuth 2.0
+	ProviderMail          = "mail" // the SMTP server
 )

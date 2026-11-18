@@ -9,7 +9,7 @@ DexaFix is one Go binary that corrects smart-scale readings with DEXA scans. It 
 - `pkg/frontend`: the web process. Pages (Go templates and htmx), static files, HTTP/HTTPS/HTTP3 listeners. **No database access.**
 - `pkg/backend/main`: the main backend. Store, keys, every security decision, internal API (`/internal/v1`), public API (`/api/v1`).
 - `pkg/backend/body`: the body service. A user's scale readings, DEXA scans (encrypted with a key of their own), estimates and the import rules. It knows nothing about people and trusts only the short-lived signed token the main backend sends (`pkg/shared/bodyapi`).
-- `pkg/workers`: the workers, processes **without a database** that talk to Withings, Strength Level and the like. They lease jobs from the backend's queue and report back; nothing else touches those services.
+- `pkg/workers`: the workers, processes **without a database** that talk to Withings, Strength Level, the sign-in providers (`oidc`) and the mail server (`mail`). The backend itself makes no outgoing connection. They lease jobs from the backend's queue and report back; nothing else touches those services.
 - `pkg/shared`: what they need in common (`apiclient` is the web/api contract, `workerapi` the api/worker contract, `bodyapi` the api/body contract, `edge`, `mtls`, small helpers).
 - `pkg/store`: the `Store` interface and the SQL implementation for SQLite and PostgreSQL.
 - `pkg/app`, `cmd`: the single-process mode and the command line.

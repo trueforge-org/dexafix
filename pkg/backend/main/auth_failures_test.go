@@ -92,13 +92,16 @@ func TestBasicCredentialsWaitForASlotAndGiveUpWhenTheClientDoes(t *testing.T) {
 }
 
 func TestProviderIDTokensOnTheAPIAreCheckedAgainstTheirIssuer(t *testing.T) {
-	g := newRig(t)
+	g := newProviderRig(t)
 	idp := newFakeIdP(t)
 	uid, _ := g.signUp("alice")
 	path := fmt.Sprintf("/api/v1/users/%d/settings", uid)
 	ctx := context.Background()
 	p := models.AuthProvider{Slug: "idp", Label: "Test IdP", Kind: models.ProviderKindOIDC, Issuer: idp.URL, ClientID: "client-1", ClientSecret: "s"}
 	g.addProvider(p)
+	if _, err := g.b.providerMetadata(ctx, p); err != nil { // a worker fetches the keys; the API never does
+		t.Fatal(err)
+	}
 	bearer := func(tok string) map[string]string { return map[string]string{"Authorization": "Bearer " + tok} }
 	good := idp.token(t, "client-1", "sub-1", "")
 	unsigned := func(iss string) string {
@@ -134,7 +137,6 @@ func TestProviderIDTokensOnTheAPIAreCheckedAgainstTheirIssuer(t *testing.T) {
 		q := p
 		q.Slug, q.Kind = "plain", models.ProviderKindOAuth2
 		g.addProvider(q)
-		g.b.forgetOIDCProvider(idp.URL)
 		if err := g.st.DeleteAuthProvider(ctx, "idp"); err != nil {
 			t.Fatal(err)
 		}
@@ -147,9 +149,9 @@ func TestProviderIDTokensOnTheAPIAreCheckedAgainstTheirIssuer(t *testing.T) {
 		url := dead.URL
 		dead.Close()
 		g.addProvider(models.AuthProvider{Slug: "dead", Label: "Dead", Kind: models.ProviderKindOIDC, Issuer: url, ClientID: "c", ClientSecret: "s"})
-		logs := captureSignInLog(t)
-		if rec := g.publicGet(ctx, path, bearer(unsigned(url))); rec.Code != http.StatusUnauthorized || !strings.Contains(logs.String(), "authentication failed") {
-			t.Fatalf("%d, log %s", rec.Code, logs)
+		// No keys were ever fetched for it: the token is refused, and nothing is fetched by the API itself.
+		if rec := g.publicGet(ctx, path, bearer(unsigned(url))); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("%d", rec.Code)
 		}
 	})
 	t.Run("a provider list that cannot be read", func(t *testing.T) {
@@ -161,7 +163,7 @@ func TestProviderIDTokensOnTheAPIAreCheckedAgainstTheirIssuer(t *testing.T) {
 }
 
 func TestALinkedProviderLoginThatCannotBeLookedUpIsRefused(t *testing.T) {
-	g := newRig(t)
+	g := newProviderRig(t)
 	idp := newFakeIdP(t)
 	uid, _ := g.signUp("alice")
 	g.addProvider(models.AuthProvider{Slug: "idp", Label: "Test IdP", Kind: models.ProviderKindOIDC, Issuer: idp.URL, ClientID: "client-1", ClientSecret: "s"})

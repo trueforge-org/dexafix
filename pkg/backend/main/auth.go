@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/rs/zerolog/log"
 	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
@@ -170,12 +169,19 @@ func (s *Backend) authProviderToken(ctx context.Context, raw string) (models.Use
 		if p.Kind == models.ProviderKindOAuth2 || p.Issuer != iss {
 			continue
 		}
-		prov, err := s.oidcProvider(ctx, p)
+		m, err := s.store.GetAuthProviderMetadata(ctx, p.Slug)
+		if errors.Is(err, store.ErrNotFound) { // no worker has fetched the keys yet: ask for them, and refuse for now
+			s.refreshProviderKeys(ctx, p)
+			continue
+		}
 		if err != nil {
 			return models.User{}, false, err
 		}
-		idt, err := prov.Verifier(&oidc.Config{ClientID: p.ClientID}).Verify(s.oidcContext(ctx), raw)
+		idt, stale, err := verifyIDToken(ctx, p, m, raw)
 		if err != nil {
+			if stale { // the provider rotated its keys: a worker fetches them, the next request works
+				s.refreshProviderKeys(ctx, p)
+			}
 			continue // another provider may share the issuer with a different client id
 		}
 		id, err := s.store.GetIdentity(ctx, p.Slug, idt.Subject)

@@ -598,7 +598,8 @@ func (s *Backend) internalAdminSaveProvider(w http.ResponseWriter, r *http.Reque
 	if p.ClientSecret == "" {
 		p.ClientSecret = old.ClientSecret
 	}
-	if msg := s.prepareProvider(ctx, &p); msg != "" {
+	msg, meta := s.prepareProvider(ctx, &p)
+	if msg != "" {
 		adminMsg(w, msg)
 		return
 	}
@@ -606,55 +607,68 @@ func (s *Backend) internalAdminSaveProvider(w http.ResponseWriter, r *http.Reque
 		internalError(w, err)
 		return
 	}
-	s.forgetOIDCProvider(old.Issuer)
+	// What a worker learned about the old settings does not hold for the new ones.
+	if meta != nil {
+		err = s.store.PutAuthProviderMetadata(ctx, *meta)
+	} else {
+		err = s.store.DeleteAuthProviderMetadata(ctx, p.Slug)
+	}
+	if err != nil {
+		internalError(w, err)
+		return
+	}
 	s.audit(r, 0, auditProviderSaved, p.Slug)
 	adminMsg(w, p.Label+" saved.")
 }
 
 // prepareProvider validates a provider by kind and fills in defaults. It returns a message for the
-// administrator, or "" when the provider is ready to save.
-func (s *Backend) prepareProvider(ctx context.Context, p *models.AuthProvider) string {
+// administrator, or "" when the provider is ready to save. For OpenID Connect it has a worker read the
+// issuer's configuration and keys first (so a wrong issuer is not saved) and returns what it found,
+// to be stored with the provider.
+func (s *Backend) prepareProvider(ctx context.Context, p *models.AuthProvider) (string, *models.AuthProviderMetadata) {
 	switch p.Kind {
 	case models.ProviderKindOIDC:
 		if !validProviderURL(p.Issuer) {
-			return "OpenID Connect needs an https issuer URL."
+			return "OpenID Connect needs an https issuer URL.", nil
 		}
 		if p.ClientSecret == "" {
-			return "A client secret is required."
+			return "A client secret is required.", nil
 		}
 		if p.Scopes == "" {
 			p.Scopes = "openid email profile"
 		}
-		s.forgetOIDCProvider(p.Issuer)
-		if _, err := s.oidcProvider(ctx, *p); err != nil {
-			return outboundFailure(err, "Could not read the OpenID configuration from that issuer", settingLabelProviders)
+		res, err := s.discoverIssuer(ctx, "", p.Issuer)
+		if err != nil {
+			return outboundFailure(err, "Could not read the OpenID configuration from that issuer", settingLabelProviders), nil
 		}
+		return "", &models.AuthProviderMetadata{Slug: p.Slug, Issuer: res.Issuer, AuthURL: res.AuthURL, TokenURL: res.TokenURL,
+			UserinfoURL: res.UserinfoURL, JWKS: string(res.JWKS), FetchedAt: time.Now()}
 	case models.ProviderKindApple:
 		p.Issuer = appleIssuer
 		if p.AppleTeamID == "" || p.AppleKeyID == "" {
-			return "Apple needs a team ID and key ID."
+			return "Apple needs a team ID and key ID.", nil
 		}
 		if _, err := parseAppleKey(p.ClientSecret); err != nil {
-			return "Paste the contents of the .p8 key file from Apple as the secret."
+			return "Paste the contents of the .p8 key file from Apple as the secret.", nil
 		}
 		if p.Scopes == "" {
 			p.Scopes = "name email"
 		}
 	case models.ProviderKindOAuth2:
 		if !validProviderURL(p.AuthURL) || !validProviderURL(p.TokenURL) || !validProviderURL(p.UserinfoURL) {
-			return "OAuth 2.0 needs https authorisation, token and userinfo URLs."
+			return "OAuth 2.0 needs https authorisation, token and userinfo URLs.", nil
 		}
 		if p.ClientSecret == "" {
-			return "A client secret is required."
+			return "A client secret is required.", nil
 		}
 		if p.SubjectClaim == "" {
 			p.SubjectClaim = "sub"
 		}
 		p.Issuer = ""
 	default:
-		return "Unknown provider type."
+		return "Unknown provider type.", nil
 	}
-	return ""
+	return "", nil
 }
 
 func (s *Backend) internalAdminDeleteProvider(w http.ResponseWriter, r *http.Request, u models.User) {
@@ -680,7 +694,6 @@ func (s *Backend) internalAdminDeleteProvider(w http.ResponseWriter, r *http.Req
 		internalError(w, err)
 		return
 	}
-	s.forgetOIDCProvider(p.Issuer)
 	s.audit(r, 0, auditProviderRemoved, slug)
 	adminMsg(w, p.Label+" removed.")
 }
@@ -919,7 +932,7 @@ func (s *Backend) internalAdminSaveSMTP(w http.ResponseWriter, r *http.Request, 
 		}
 		cfg.Port = n
 	}
-	if _, err := mailer.New(cfg); err != nil {
+	if _, err := mailer.Check(cfg); err != nil {
 		adminMsg(w, err.Error())
 		return
 	}
@@ -954,7 +967,10 @@ func (s *Backend) internalAdminTestSMTP(w http.ResponseWriter, r *http.Request, 
 		adminMsg(w, "Your account has no e-mail address to send the test to.")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)
+	if jm, ok := m.(*jobMailer); ok { // the page waits for the worker, to say how it went
+		m = jm.waiting()
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), mailWait+10*time.Second)
 	defer cancel()
 	if err := m.Send(ctx, u.Email, "DexaFix test e-mail", "This is a test e-mail from DexaFix. E-mail is working.\n"); err != nil {
 		adminMsg(w, outboundFailure(err, "Could not send the test e-mail", settingLabelMail))

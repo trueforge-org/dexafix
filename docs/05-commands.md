@@ -7,7 +7,7 @@
 | `serve`                   | Run everything in one process: pages, API, database and keys.               |
 | `serve web`               | Run the frontend of a [split deployment](15-split-deployment.md): pages, static files and the public HTTP, HTTPS and HTTP/3 listeners. No database. |
 | `serve api`               | Run the backend of a split deployment: database, keys, public API, internal API and maintenance. |
-| `serve worker`            | Run a [worker](16-workers.md): it talks to Withings and Strength Level for the api process. No database. |
+| `serve worker`            | Run a [worker](16-workers.md): it talks to Withings, Strength Level, the sign-in providers and the mail server for the api process. No database. |
 | `serve body`              | Run the [body service](17-body-service.md): scale readings, DEXA scans and estimates, in a database of its own. |
 | `healthcheck URL`         | Make one GET request and exit 0 if the answer is 2xx, 1 otherwise. For the container health check: the image has no shell and no curl. See [Status and health checks](15-split-deployment.md#status-and-health-checks). |
 | `secrets service-secret`  | Print a new service secret of 64 hexadecimal characters for `serve web` and `serve api`. |

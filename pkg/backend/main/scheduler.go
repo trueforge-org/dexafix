@@ -39,6 +39,7 @@ func (s *Backend) startWorkerMaintenance() {
 			s.lastSweep.Store(0) // always sweep here: the leasing requests only do it when they are busy
 			s.maintainQueue(s.bg.Ctx)
 			s.runScheduler(s.bg.Ctx)
+			s.refreshStaleProviderKeys(s.bg.Ctx)
 			if time.Since(lastHousekeeping) >= housekeepEvery {
 				lastHousekeeping = time.Now()
 				s.purgeJobs(s.bg.Ctx)

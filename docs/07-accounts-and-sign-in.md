@@ -85,7 +85,7 @@ https://your-host/auth/<short name>/callback
 The Admin page shows the callback URL for each provider. Replace `<short name>`
 with the provider's short name.
 
-DexaFix connects to a provider from the api process. A provider on a private
+DexaFix connects to a provider from the `oidc` [worker](16-workers.md), never from the api process, so that process needs no route to the internet. A provider on a private
 network address (Authentik or Keycloak on your own LAN, say) is refused until
 you turn on **Allow sign-in providers on private network addresses** under
 **Network and retention**. Cloud metadata and other

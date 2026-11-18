@@ -1,4 +1,4 @@
-package mailer
+package smtpsend
 
 import (
 	"bufio"
@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/trueforge-org/dexafix/pkg/mailer"
 )
 
 // scriptedSMTP is an SMTP server that answers every command well, except where the test says
@@ -130,7 +132,7 @@ func (s *scriptedSMTP) handle(conn net.Conn) {
 }
 
 // senderFor returns a sender for the scripted server in the given TLS mode.
-func senderFor(t *testing.T, s *scriptedSMTP, cfg Config) *SMTP {
+func senderFor(t *testing.T, s *scriptedSMTP, cfg mailer.Config) *SMTP {
 	t.Helper()
 	cfg.Host, cfg.Port, cfg.From = "127.0.0.1", s.port(), "Dexa <dexa@example.com>"
 	m, err := New(cfg)
@@ -145,23 +147,23 @@ func TestSendSaysWhichStepTheSMTPServerBrokeAt(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		reply map[string]string
-		cfg   Config
+		cfg   mailer.Config
 		body  string
 		want  string // part of the error
 	}{
-		{"the server hangs up at once", map[string]string{"GREET": closeConn}, Config{TLS: None}, "b", "smtp greeting"},
-		{"the greeting is a refusal", map[string]string{"GREET": "554 no service"}, Config{TLS: None}, "b", "smtp greeting"},
-		{"the server does not speak TLS on a TLS port", nil, Config{TLS: TLS}, "b", "smtp greeting"},
-		{"the server offers STARTTLS but cannot do it", map[string]string{"EHLO": "250-scripted\n250 STARTTLS", "STARTTLS": "454 TLS not available"}, Config{TLS: StartTLS}, "b", "starttls"},
-		{"the server refuses the login", map[string]string{"AUTH": "535 bad credentials"}, Config{TLS: None, Username: "u", Password: "p"}, "b", "smtp login"},
-		{"the server refuses the sender", map[string]string{"MAIL": "550 sender not allowed"}, Config{TLS: None}, "b", "smtp sender"},
-		{"the server refuses the recipient", map[string]string{"RCPT": "550 no such user"}, Config{TLS: None}, "b", "smtp recipient"},
-		{"the server refuses the message data command", map[string]string{"DATA": "554 no"}, Config{TLS: None}, "b", "smtp data"},
-		{"the server drops the connection at the data command", map[string]string{"DATA": closeConn}, Config{TLS: None}, "b", "smtp data"},
-		{"the server refuses the finished message", map[string]string{"END": "552 too big"}, Config{TLS: None}, "b", "smtp data"},
-		{"the server hangs up before the message is read", map[string]string{"CUT": "1"}, Config{TLS: None}, "b", "smtp data"},
-		{"the server hangs up while a long message is sent", map[string]string{"CUT": "1"}, Config{TLS: None}, big, "smtp data"},
-		{"the server hangs up at goodbye", map[string]string{"QUIT": closeConn}, Config{TLS: None}, "b", ""},
+		{"the server hangs up at once", map[string]string{"GREET": closeConn}, mailer.Config{TLS: mailer.None}, "b", "smtp greeting"},
+		{"the greeting is a refusal", map[string]string{"GREET": "554 no service"}, mailer.Config{TLS: mailer.None}, "b", "smtp greeting"},
+		{"the server does not speak TLS on a TLS port", nil, mailer.Config{TLS: mailer.TLS}, "b", "smtp greeting"},
+		{"the server offers STARTTLS but cannot do it", map[string]string{"EHLO": "250-scripted\n250 STARTTLS", "STARTTLS": "454 TLS not available"}, mailer.Config{TLS: mailer.StartTLS}, "b", "starttls"},
+		{"the server refuses the login", map[string]string{"AUTH": "535 bad credentials"}, mailer.Config{TLS: mailer.None, Username: "u", Password: "p"}, "b", "smtp login"},
+		{"the server refuses the sender", map[string]string{"MAIL": "550 sender not allowed"}, mailer.Config{TLS: mailer.None}, "b", "smtp sender"},
+		{"the server refuses the recipient", map[string]string{"RCPT": "550 no such user"}, mailer.Config{TLS: mailer.None}, "b", "smtp recipient"},
+		{"the server refuses the message data command", map[string]string{"DATA": "554 no"}, mailer.Config{TLS: mailer.None}, "b", "smtp data"},
+		{"the server drops the connection at the data command", map[string]string{"DATA": closeConn}, mailer.Config{TLS: mailer.None}, "b", "smtp data"},
+		{"the server refuses the finished message", map[string]string{"END": "552 too big"}, mailer.Config{TLS: mailer.None}, "b", "smtp data"},
+		{"the server hangs up before the message is read", map[string]string{"CUT": "1"}, mailer.Config{TLS: mailer.None}, "b", "smtp data"},
+		{"the server hangs up while a long message is sent", map[string]string{"CUT": "1"}, mailer.Config{TLS: mailer.None}, big, "smtp data"},
+		{"the server hangs up at goodbye", map[string]string{"QUIT": closeConn}, mailer.Config{TLS: mailer.None}, "b", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := newScriptedSMTP(t, tc.reply)
@@ -180,7 +182,7 @@ func TestSendToAServerThatIsNotThereNamesTheAddress(t *testing.T) {
 	}
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close() // nobody listens any more
-	m, err := New(Config{Host: "127.0.0.1", Port: port, From: "dexa@example.com", TLS: None})
+	m, err := New(mailer.Config{Host: "127.0.0.1", Port: port, From: "dexa@example.com", TLS: mailer.None})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,8 +195,8 @@ func TestSendToAServerThatIsNotThereNamesTheAddress(t *testing.T) {
 func TestSendAsksTheDialControlBeforeConnectingAndStopsWhenItRefuses(t *testing.T) {
 	refused := errors.New("the guard said no")
 	var asked atomic.Int32
-	m, err := New(Config{
-		Host: "127.0.0.1", Port: 1, TLS: None, From: "noreply@example.com",
+	m, err := New(mailer.Config{
+		Host: "127.0.0.1", Port: 1, TLS: mailer.None, From: "noreply@example.com",
 		DialControl: func(network, address string, _ syscall.RawConn) error {
 			asked.Add(1)
 			if address != "127.0.0.1:1" {
