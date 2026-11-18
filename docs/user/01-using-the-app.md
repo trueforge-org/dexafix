@@ -28,7 +28,8 @@ badges throughout the app link to the matching section of this documentation.
 Settings and Admin are in a menu under your first name (or your username, when
 you have not set one) in the header, which also has **Sign out**.
 
-- `/`: the sign-in page. Sign in with an e-mail address and password, with a
+- `/`: the home page for visitors: a short introduction next to the sign-in
+  page (the sign-in page comes first on a phone). Sign in with an e-mail address and password, with a
   passkey (**Sign in with a passkey**), create an account, or use a provider
   button. A username is unique (ignoring case) and has 2 to 32 letters, digits,
   `.`, `_` or `-`, starting with a letter or digit. You sign in with your

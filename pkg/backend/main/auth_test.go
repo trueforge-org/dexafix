@@ -577,6 +577,8 @@ func TestProviderSignIn(t *testing.T) {
 	}
 	if _, b := body(t, noRedirectClient(), ts.URL+"/"); !strings.Contains(b, "Continue with Test IdP") {
 		t.Fatal("provider button missing")
+	} else if !strings.Contains(b, `class="landing"`) || !strings.Contains(b, `<p class="divider">`) {
+		t.Fatal("landing page or the divider between provider and password sign-in missing")
 	}
 
 	// not linked and sign-up off: refused, never matched by name or e-mail

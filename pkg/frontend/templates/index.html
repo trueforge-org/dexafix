@@ -1,6 +1,24 @@
 {{define "content"}}
 {{with .Login}}
-<div class="login-stack">
+<div class="landing">
+  <section class="landing-pitch" aria-labelledby="pitch-title">
+    <p class="eyebrow">Body composition, corrected</p>
+    <h2 id="pitch-title" class="display">Your smart scale, corrected by your DEXA scan</h2>
+    <p class="lead">A smart scale is convenient but biased. A DEXA scan is accurate but rare. DexaFix uses the difference between the two to correct the scale in between your scans.</p>
+    <ul class="feature-list">
+      <li>Daily estimates of body fat, fat mass and fat-free mass</li>
+      <li>Import your readings from Withings and your lifts from Strength Level</li>
+      <li>Your readings and scans are encrypted with a key of their own</li>
+      <li>Free and open source</li>
+    </ul>
+    <ol class="steps" aria-label="How it works">
+      <li><strong>Scale readings</strong><span>every day</span></li>
+      <li><strong>DEXA scan</strong><span>now and then</span></li>
+      <li><strong>Corrected estimate</strong><span>every day</span></li>
+    </ol>
+    <p><a class="button secondary" href="{{docsURL "how-estimates-work"}}">How the estimates work</a></p>
+  </section>
+  <div class="landing-auth login-stack">
   <div class="card welcome">
     <div>
       <h1>Sign in {{help "accounts"}}</h1>
@@ -9,6 +27,7 @@
     {{if .Providers}}<div class="provider-buttons">{{range .Providers}}<a class="button secondary" href="/auth/{{.Slug}}/login">Continue with {{.Label}}</a>{{end}}{{help "providers"}}</div>{{end}}
     {{if .Passkeys}}<div class="provider-buttons"><button type="button" id="passkey-login" class="secondary" hidden>Sign in with a passkey</button></div>
     <p id="passkey-msg" class="notice error" role="alert" aria-live="polite"></p>{{end}}
+    {{if and .PasswordEnabled (not .FirstUser)}}{{if or .Providers .Passkeys}}<p class="divider"><span>or</span></p>{{end}}{{end}}
     {{if .PasswordEnabled}}{{if not .FirstUser}}
     <form method="post" action="/login" class="fields">
       <label>E-mail <input type="text" inputmode="email" name="email" maxlength="254" required autocomplete="username webauthn"></label>
@@ -28,6 +47,7 @@
     <button type="submit" class="secondary">Create account</button>
   </form>
   {{end}}
+  </div>
 </div>
 {{end}}
 {{if and .Login .Login.Passkeys}}<script src="{{asset "passkey.js"}}" defer></script>{{end}}
