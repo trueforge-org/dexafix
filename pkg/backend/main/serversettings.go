@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/trueforge-org/dexafix/pkg/mailer"
+	"github.com/trueforge-org/dexafix/pkg/mailer/smtpsend"
 	"github.com/trueforge-org/dexafix/pkg/shared/apiclient"
 	"github.com/trueforge-org/dexafix/pkg/shared/netguard"
 	"github.com/trueforge-org/dexafix/pkg/shared/tlsutil"
@@ -217,7 +218,7 @@ func (s *Backend) reload(ctx context.Context, generate bool) error {
 		return err
 	}
 	if cfg.Host != "" {
-		if m, merr := mailer.New(cfg); merr != nil {
+		if m, merr := smtpsend.New(cfg); merr != nil {
 			log.Warn().Err(merr).Msg("ignoring the stored e-mail settings")
 		} else {
 			l.mailer = m

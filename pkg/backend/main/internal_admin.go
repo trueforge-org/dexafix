@@ -919,7 +919,7 @@ func (s *Backend) internalAdminSaveSMTP(w http.ResponseWriter, r *http.Request, 
 		}
 		cfg.Port = n
 	}
-	if _, err := mailer.New(cfg); err != nil {
+	if _, err := mailer.Check(cfg); err != nil {
 		adminMsg(w, err.Error())
 		return
 	}
