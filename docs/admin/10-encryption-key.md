@@ -42,7 +42,7 @@ Back up the key separately from the database. Without it, the encrypted values
 cannot be read, and the server does not start, because a server setting can no
 longer be read. Keeping the key next to database backups defeats the purpose.
 
-## Rotating the key
+## Rotating the key {#rotating-the-key}
 
 Stored values look like `enc:v2:<key id>:<data>`. The key id is the first eight
 hexadecimal characters of the SHA-256 of the key, so values written by different
@@ -81,7 +81,7 @@ tested on both.
 
 Rotation is manual on purpose: the key belongs to the operator, `db rekey` is
 offline and the AES-GCM usage limits are far out of reach (see
-[key-rotation.md](../developer/06-key-rotation-design.md)). Rotate when the key may have
+[Key rotation design](../developer/06-key-rotation-design.md)). Rotate when the key may have
 leaked, when someone with access leaves, or when your policy asks for it. The
 Admin page shows the key id and since when it is in use (at least). To get a
 reminder there, set **Remind me to rotate the encryption key after (days)** under

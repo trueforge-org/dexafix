@@ -1,0 +1,15 @@
+{{define "content"}}
+<div class="page-head"><h1>Documentation</h1></div>
+<p class="help">The documentation has one part for each reader. Small <span class="help-link" aria-hidden="true">?</span> badges throughout the app link to the matching section.</p>
+<div class="docs-cards">
+  {{range .Docs.Index.Sections}}
+  <section class="card" id="{{.ID}}" aria-labelledby="docs-{{.ID}}">
+    <h2 id="docs-{{.ID}}">{{.Title}}</h2>
+    <p class="help">{{.Blurb}}</p>
+    <ol>
+      {{$sec := .}}{{range .Pages}}<li><a href="/docs/{{$sec.ID}}/{{.Slug}}">{{.Title}}</a></li>{{end}}
+    </ol>
+  </section>
+  {{end}}
+</div>
+{{end}}
