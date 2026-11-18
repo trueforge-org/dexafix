@@ -481,6 +481,11 @@
               "level": 3
             },
             {
+              "id": "the-backend-refused-the-worker-secret",
+              "title": "The backend refused the worker secret",
+              "level": 3
+            },
+            {
               "id": "web-waits-for-the-api-process",
               "title": "Web waits for the api process",
               "level": 3

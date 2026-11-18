@@ -17,6 +17,7 @@ import (
 	"math/rand/v2"
 	"runtime/debug"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -205,7 +206,7 @@ func (r *Runner) Run(ctx context.Context) error {
 		}
 		var e *apiclient.Error
 		if errors.As(err, &e) && (e.Status == 401 || e.Status == 403) {
-			return fmt.Errorf("the backend refused the worker secret: %w", err)
+			return fmt.Errorf("the backend refused the worker secret (kinds %s): the api process must list this worker's provider with the same secret in --worker-secret-file (DEXAFIX_WORKER_SECRET_FILES, PROVIDER=FILE): %w", strings.Join(r.kinds(), ", "), err)
 		}
 		log.Warn().Err(err).Msg("backend not reachable, waiting")
 		if !backoff(ctx, wait) {

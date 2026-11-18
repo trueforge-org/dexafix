@@ -273,7 +273,14 @@ make a worker secret for each (<code>dexafix secrets worker-secret</code>), pass
 <code>dexafix serve worker --providers oidc</code> and <code>--providers mail</code> with the matching
 secret on a network that can reach the providers and the mail server. Until you
 do, signing in with a provider fails with &quot;not available right now&quot; and e-mails
-are reported as not sent. Password sign-in is not affected. The database gets a
+are reported as not sent. Password sign-in is not affected.</p>
+<p>If you keep your own copy of the Compose file instead of the one in <code>deploy/</code>,
+<code>pull</code> and <code>up -d</code> are not enough. Also add <code>oidc=/secrets/api/worker_secret_oidc</code>
+and <code>mail=/secrets/api/worker_secret_mail</code> to <code>DEXAFIX_WORKER_SECRET_FILES</code> of the
+<code>api</code> service, the two <code>--worker-dir</code> lines and volumes of <code>init</code>, and the
+<code>worker-oidc</code> and <code>worker-mail</code> services with their <code>secrets-worker-*</code> volumes.
+Without the api entries the new workers stop with <a href="#the-backend-refused-the-worker-secret">the backend refused the worker
+secret</a>. The database gets a
 new migration (<code>00006</code>) that lets a job belong to no user.</p>
 <p>The Docker daemon may run on another host than your shell (Docker Desktop with a
 dev container). Then a bind mount such as <code>./secrets</code> is not visible to it: use a
@@ -689,6 +696,19 @@ as above, or <code>dexafix secrets init</code> for everything at once.</p>
 <li>The two processes read different files, or the api process does not have
 the first line of the web process's file. Give both the same file, or finish
 the rotation in the order above.</li>
+</ul>
+<h3 id="the-backend-refused-the-worker-secret">The backend refused the worker secret</h3>
+<p>A worker stops at start with <code>the backend refused the worker secret ... worker authentication required</code>. The api process answered 401.</p>
+<ul>
+<li>The api process does not list the worker's provider. After an upgrade from a
+version without the <code>oidc</code> and <code>mail</code> workers, add
+<code>oidc=/secrets/api/worker_secret_oidc;mail=/secrets/api/worker_secret_mail</code> to
+<code>DEXAFIX_WORKER_SECRET_FILES</code> of the <code>api</code> service (entries are separated by <code>;</code>),
+then run <code>docker compose up -d</code>.</li>
+<li>The worker and the api process read different files. Each provider's workers need
+the file <code>init</code> made for that provider in their own secrets volume, and the api
+process needs the same value under <code>PROVIDER=FILE</code>.</li>
+<li><code>init</code> did not run again after you added the worker's volume and <code>--worker-dir</code>.</li>
 </ul>
 <h3 id="web-waits-for-the-api-process">Web waits for the api process</h3>
 <p>At start, web logs <code>waiting for the backend</code> and retries for up to 60 seconds.

@@ -272,7 +272,15 @@ make a worker secret for each (`dexafix secrets worker-secret`), pass
 `dexafix serve worker --providers oidc` and `--providers mail` with the matching
 secret on a network that can reach the providers and the mail server. Until you
 do, signing in with a provider fails with "not available right now" and e-mails
-are reported as not sent. Password sign-in is not affected. The database gets a
+are reported as not sent. Password sign-in is not affected.
+
+If you keep your own copy of the Compose file instead of the one in `deploy/`,
+`pull` and `up -d` are not enough. Also add `oidc=/secrets/api/worker_secret_oidc`
+and `mail=/secrets/api/worker_secret_mail` to `DEXAFIX_WORKER_SECRET_FILES` of the
+`api` service, the two `--worker-dir` lines and volumes of `init`, and the
+`worker-oidc` and `worker-mail` services with their `secrets-worker-*` volumes.
+Without the api entries the new workers stop with [the backend refused the worker
+secret](#the-backend-refused-the-worker-secret). The database gets a
 new migration (`00006`) that lets a job belong to no user.
 
 The Docker daemon may run on another host than your shell (Docker Desktop with a
@@ -694,6 +702,21 @@ Web stops at start with `the backend refused the service secret: use the same
 - The two processes read different files, or the api process does not have
   the first line of the web process's file. Give both the same file, or finish
   the rotation in the order above.
+
+### The backend refused the worker secret
+
+A worker stops at start with `the backend refused the worker secret ... worker
+authentication required`. The api process answered 401.
+
+- The api process does not list the worker's provider. After an upgrade from a
+  version without the `oidc` and `mail` workers, add
+  `oidc=/secrets/api/worker_secret_oidc;mail=/secrets/api/worker_secret_mail` to
+  `DEXAFIX_WORKER_SECRET_FILES` of the `api` service (entries are separated by `;`),
+  then run `docker compose up -d`.
+- The worker and the api process read different files. Each provider's workers need
+  the file `init` made for that provider in their own secrets volume, and the api
+  process needs the same value under `PROVIDER=FILE`.
+- `init` did not run again after you added the worker's volume and `--worker-dir`.
 
 ### Web waits for the api process
 

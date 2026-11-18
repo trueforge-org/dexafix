@@ -70,7 +70,9 @@ In the Compose deployment, run `docker compose pull && docker compose up -d`:
 `init` makes `worker_secret_withings`, `worker_secret_strengthlevel`,
 `worker_secret_oidc` and `worker_secret_mail`, and each worker container gets its
 own secrets volume. The old `worker_secret` file and the
-`secrets-worker` volume are no longer used and can be removed.
+`secrets-worker` volume are no longer used and can be removed. With your own copy
+of the Compose file, also extend `DEXAFIX_WORKER_SECRET_FILES`, see [the backend
+refused the worker secret](06-split-deployment.md#the-backend-refused-the-worker-secret).
 
 `--backend-url` is the internal address of the api process, the same one web
 uses. Workers use the internal listener and, if you set it up,
