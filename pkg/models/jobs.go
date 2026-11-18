@@ -22,6 +22,7 @@ const (
 	JobOriginAPI      = "api"      // the public API
 	JobOriginSchedule = "schedule" // the scheduler
 	JobOriginAdmin    = "admin"    // an administrator
+	JobOriginSystem   = "system"   // the backend itself (a refresh of a provider's signing keys)
 	JobOriginAuto     = "auto"     // started by new data, for a user who switched that on
 )
 

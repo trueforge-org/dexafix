@@ -206,6 +206,13 @@ func (s *Store) GetJob(ctx context.Context, publicID string) (models.Job, error)
 	return s.jobModel(row, true)
 }
 
+// ClearJobResult empties the result of a job that has ended.
+func (s *Store) ClearJobResult(ctx context.Context, publicID string) error {
+	_, err := s.db.NewUpdate().Model((*jobRow)(nil)).Set("result = ''").
+		Where("public_id = ? AND state NOT IN (?)", publicID, bun.In([]string{models.JobQueued, models.JobRunning})).Exec(ctx)
+	return err
+}
+
 // ListJobs returns jobs newest first, without their payload and result.
 func (s *Store) ListJobs(ctx context.Context, f models.JobFilter) ([]models.Job, error) {
 	var rows []jobRow

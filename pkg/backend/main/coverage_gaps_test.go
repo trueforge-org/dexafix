@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trueforge-org/dexafix/pkg/models"
 	"github.com/trueforge-org/dexafix/pkg/store"
 )
 
@@ -129,26 +128,21 @@ func TestALoginThatCannotBeCountedIsRefused(t *testing.T) {
 	}
 }
 
-func TestAnOIDCDiscoveryWhoseIssuerDiffersByASlashIsRetried(t *testing.T) {
-	g := newRig(t)
+func TestAnOIDCDiscoveryWhoseIssuerDiffersByASlashIsAccepted(t *testing.T) {
+	g := newProviderRig(t)
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/keys" {
+			fmt.Fprint(w, `{"keys":[]}`)
+			return
+		}
 		fmt.Fprintf(w, `{"issuer":%q,"authorization_endpoint":%q,"token_endpoint":%q,"jwks_uri":%q}`, srv.URL+"/", srv.URL+"/auth", srv.URL+"/token", srv.URL+"/keys")
 	}))
 	defer srv.Close()
-	if _, err := g.b.oidcProvider(context.Background(), models.AuthProvider{Slug: "idp", Issuer: srv.URL}); err != nil {
-		t.Fatalf("a provider that advertises its issuer with a trailing slash: %v", err)
-	}
-}
-
-// A provider client without a transport of its own still gets the size limit.
-func TestTheSizeLimitAlsoGoesOnAClientWithoutATransport(t *testing.T) {
-	g := newRig(t)
-	g.b.httpClient = &http.Client{}
-	ctx := g.b.oidcContext(context.Background())
-	if ctx == nil {
-		t.Fatal("no context")
+	res, err := g.b.discoverIssuer(context.Background(), "", srv.URL)
+	if err != nil || res.Issuer != srv.URL+"/" {
+		t.Fatalf("a provider that advertises its issuer with a trailing slash: %+v %v", res, err)
 	}
 }
 

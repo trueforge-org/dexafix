@@ -284,6 +284,9 @@ type Store interface {
 	// every state change is conditional on the state and lease token it expects.
 	EnqueueJob(ctx context.Context, j models.NewJob) (job models.Job, created bool, err error)
 	GetJob(ctx context.Context, publicID string) (models.Job, error)
+	// ClearJobResult drops the result of a job that ended, once whoever waited for it has read it (a
+	// sign-in's identity is for one callback and is not kept with the job history).
+	ClearJobResult(ctx context.Context, publicID string) error
 	ListJobs(ctx context.Context, f models.JobFilter) ([]models.Job, error)
 	LastFinishedStates(ctx context.Context, kind string, n int, since time.Time) ([]string, error)
 	LeaseJob(ctx context.Context, req models.LeaseRequest, at time.Time) (job models.Job, ok bool, err error)

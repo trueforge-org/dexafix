@@ -68,7 +68,7 @@ func TestFirstAndLastNameAreKeptShownAndExported(t *testing.T) {
 }
 
 func TestAProviderAccountGetsAUsernameAndNamesFromTheClaims(t *testing.T) {
-	g := newRig(t)
+	g := newProviderRig(t)
 	idp := newOAuthFake(t)
 	p := idp.provider()
 	p.SubjectClaim = "id"

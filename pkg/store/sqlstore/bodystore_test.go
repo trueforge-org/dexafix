@@ -68,7 +68,7 @@ func TestMainStoreWithoutBodyAndCombined(t *testing.T) {
 			t.Errorf("a combined database lacks %s", name)
 		}
 	}
-	if v, _ := both.SchemaVersion(ctx); v != 5 {
+	if v, _ := both.SchemaVersion(ctx); v != 6 {
 		t.Errorf("main schema version %d", v)
 	}
 	if v, _ := both.BodyStore.SchemaVersion(ctx); v != 1 {

@@ -28,7 +28,7 @@ func handled(r *runner.Runner) bool {
 }
 
 func TestTheBuiltInProvidersAreListedSorted(t *testing.T) {
-	want := []string{workerapi.ProviderStrengthLevel, workerapi.ProviderWithings}
+	want := []string{workerapi.ProviderOIDC, workerapi.ProviderStrengthLevel, workerapi.ProviderWithings}
 	if got := Names(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("Names = %v, want %v", got, want)
 	}

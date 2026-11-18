@@ -505,6 +505,8 @@ func (s *Backend) workerComplete(w http.ResponseWriter, r *http.Request) {
 	case models.OutcomeOK:
 		stored, err := spec.Apply(ctx, s, job, in.Result)
 		switch {
+		case errors.Is(err, errStaleKeys):
+			comp = models.Completion{Outcome: models.OutcomeFail, Error: errStaleKeys.Error()}
 		case errors.Is(err, errBadResult):
 			log.Warn().Err(err).Str("job", job.PublicID).Str("kind", job.Kind).Msg("a worker's result was refused")
 			comp = models.Completion{Outcome: models.OutcomeFail, Error: "the worker's result could not be used"}

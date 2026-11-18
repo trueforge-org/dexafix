@@ -30,6 +30,9 @@ type oauthFake struct {
 	tokenBody      string
 	userinfoStatus int
 	userinfoBody   string
+	// onToken runs when the token endpoint is asked, which is after a worker leased the exchange job:
+	// a test breaks a table there that the worker's own calls do not need.
+	onToken func()
 }
 
 func newOAuthFake(t *testing.T) *oauthFake {
@@ -39,6 +42,9 @@ func newOAuthFake(t *testing.T) *oauthFake {
 	mux.HandleFunc("/token", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if f.onToken != nil {
+			f.onToken()
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(f.tokenStatus)
 		fmt.Fprint(w, f.tokenBody)
@@ -76,6 +82,19 @@ func (f *oauthFake) oidcProvider(kind string) models.AuthProvider {
 	p := f.provider()
 	p.Kind, p.Issuer = kind, f.URL
 	return p
+}
+
+// breakUsersWhenTheCodeIsExchanged renames the users table once the provider's token endpoint is
+// asked. Leasing a job reads users (for the priority of its owner), so it cannot be broken any earlier.
+func (g *rig) breakUsersWhenTheCodeIsExchanged(idp *oauthFake) {
+	g.t.Helper()
+	idp.mu.Lock()
+	defer idp.mu.Unlock()
+	idp.onToken = func() {
+		if err := g.st.ExecForTests(context.Background(), "ALTER TABLE users RENAME TO users_gone"); err != nil {
+			g.t.Errorf("break table users: %v", err)
+		}
+	}
 }
 
 func (g *rig) addProvider(p models.AuthProvider) {
@@ -130,18 +149,18 @@ func pemOf(t *testing.T, key any) string {
 
 func TestStartingAProviderSignInFailsCleanly(t *testing.T) {
 	t.Run("an unknown provider is not found", func(t *testing.T) {
-		g := newRig(t)
+		g := newProviderRig(t)
 		rep := g.do("POST", "/auth/providers/nobody/start", map[string]any{})
 		wantStatus(t, rep, http.StatusNotFound, "unknown provider")
 	})
 	t.Run("a provider table that is gone fails the request", func(t *testing.T) {
-		g := newRig(t)
+		g := newProviderRig(t)
 		breakTable(t, g.st, "auth_providers")
 		wantStatus(t, g.do("POST", "/auth/providers/idp/start", map[string]any{}), http.StatusInternalServerError, "no providers")
 		wantStatus(t, g.do("POST", "/auth/providers/idp/callback", map[string]string{}), http.StatusInternalServerError, "no providers")
 	})
 	t.Run("a provider that cannot be discovered says it is not available", func(t *testing.T) {
-		g := newRig(t)
+		g := newProviderRig(t)
 		idp := newOAuthFake(t)
 		p := idp.oidcProvider(models.ProviderKindOIDC)
 		idp.Close()
@@ -168,7 +187,7 @@ func TestStartingAProviderSignInFailsCleanly(t *testing.T) {
 			"RSA key":   pemOf(t, rsaKey),
 		} {
 			t.Run(name, func(t *testing.T) {
-				g := newRig(t)
+				g := newProviderRig(t)
 				idp := newOAuthFake(t)
 				p := idp.oidcProvider(models.ProviderKindApple)
 				p.ClientSecret = key
@@ -182,7 +201,7 @@ func TestStartingAProviderSignInFailsCleanly(t *testing.T) {
 		}
 	})
 	t.Run("Apple's sign-in asks for a form post", func(t *testing.T) {
-		g := newRig(t)
+		g := newProviderRig(t)
 		idp := newOAuthFake(t)
 		ec, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 		if err != nil {
@@ -198,7 +217,7 @@ func TestStartingAProviderSignInFailsCleanly(t *testing.T) {
 		}
 	})
 	t.Run("the state cookie is for a secure connection only when the visitor's is", func(t *testing.T) {
-		g := newRig(t)
+		g := newProviderRig(t)
 		g.addProvider(newOAuthFake(t).provider())
 		req := httptest.NewRequest("POST", apiclient.Prefix+"/auth/providers/idp/start", strings.NewReader("{}"))
 		req.Header.Set(apiclient.HeaderService, rigSecret)
@@ -216,7 +235,7 @@ func TestStartingAProviderSignInFailsCleanly(t *testing.T) {
 		}
 	})
 	t.Run("linking needs the current password", func(t *testing.T) {
-		g := newRig(t)
+		g := newProviderRig(t)
 		g.addProvider(newOAuthFake(t).provider())
 		_, session := g.signUp("alice")
 		rep := g.do("POST", "/auth/providers/idp/start", map[string]any{"Link": true, "Current": "not the password"}, session)
@@ -227,7 +246,7 @@ func TestStartingAProviderSignInFailsCleanly(t *testing.T) {
 }
 
 func TestFinishingAProviderSignInRefusesWhatDoesNotMatch(t *testing.T) {
-	g := newRig(t)
+	g := newProviderRig(t)
 	idp := newOAuthFake(t)
 	g.addProvider(idp.provider())
 	other := idp.provider()
@@ -270,7 +289,7 @@ func TestFinishingAProviderSignInRefusesWhatDoesNotMatch(t *testing.T) {
 }
 
 func TestAProviderThatDoesNotCompleteTheSignInIsReportedToTheVisitor(t *testing.T) {
-	g := newRig(t)
+	g := newProviderRig(t)
 	idp := newOAuthFake(t)
 	g.addProvider(idp.provider())
 	uid, session := g.signUp("alice")
@@ -304,7 +323,7 @@ func TestTheUserinfoOfAPlainOAuthProviderIsTreatedAsUntrusted(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			g := newRig(t)
+			g := newProviderRig(t)
 			idp := newOAuthFake(t)
 			g.addProvider(idp.provider())
 			idp.set(c.setup)
@@ -319,7 +338,7 @@ func TestTheUserinfoOfAPlainOAuthProviderIsTreatedAsUntrusted(t *testing.T) {
 		})
 	}
 	t.Run("the user-info address is not usable", func(t *testing.T) {
-		g := newRig(t)
+		g := newProviderRig(t)
 		idp := newOAuthFake(t)
 		p := idp.provider()
 		p.UserinfoURL = "http://[::1"
@@ -330,7 +349,7 @@ func TestTheUserinfoOfAPlainOAuthProviderIsTreatedAsUntrusted(t *testing.T) {
 		}
 	})
 	t.Run("the user-info server is gone", func(t *testing.T) {
-		g := newRig(t)
+		g := newProviderRig(t)
 		idp := newOAuthFake(t)
 		p := idp.provider()
 		p.UserinfoURL = "http://127.0.0.1:1/userinfo"
@@ -349,7 +368,7 @@ func TestAnOpenIDProviderMustAnswerWithAnIDTokenThatVerifies(t *testing.T) {
 		"a garbled token": `{"access_token":"at","token_type":"Bearer","id_token":"nonsense"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			g := newRig(t)
+			g := newProviderRig(t)
 			idp := newOAuthFake(t)
 			g.addProvider(idp.oidcProvider(models.ProviderKindOIDC))
 			idp.set(func(f *oauthFake) { f.tokenBody = body })
@@ -361,11 +380,10 @@ func TestAnOpenIDProviderMustAnswerWithAnIDTokenThatVerifies(t *testing.T) {
 		})
 	}
 	t.Run("a provider whose discovery vanished after the start", func(t *testing.T) {
-		g := newRig(t)
+		g := newProviderRig(t)
 		idp := newOAuthFake(t)
 		g.addProvider(idp.oidcProvider(models.ProviderKindOIDC))
 		state, cookie, _ := g.beginProvider("idp", map[string]any{})
-		g.b.forgetOIDCProvider(idp.URL)
 		idp.Close()
 		if out := g.callback("idp", state, cookie, nil); out.Status != http.StatusBadGateway {
 			t.Fatalf("%+v", out)
@@ -374,7 +392,7 @@ func TestAnOpenIDProviderMustAnswerWithAnIDTokenThatVerifies(t *testing.T) {
 }
 
 func TestAPlainOAuthSignInMatchesAccountsBySubjectOnly(t *testing.T) {
-	g := newRig(t)
+	g := newProviderRig(t)
 	idp := newOAuthFake(t)
 	p := idp.provider()
 	p.SubjectClaim = "id"
@@ -404,7 +422,7 @@ func TestAPlainOAuthSignInMatchesAccountsBySubjectOnly(t *testing.T) {
 
 func TestAProviderSignInFailsCleanlyWhenTheStoreLetsItDown(t *testing.T) {
 	prepare := func(t *testing.T) (*rig, *oauthFake) {
-		g := newRig(t)
+		g := newProviderRig(t)
 		idp := newOAuthFake(t)
 		g.addProvider(idp.provider())
 		return g, idp
@@ -416,13 +434,13 @@ func TestAProviderSignInFailsCleanlyWhenTheStoreLetsItDown(t *testing.T) {
 		wantStatus(t, g.do("POST", "/auth/providers/idp/callback", map[string]string{"state": state, "code": "c"}, cookie), http.StatusInternalServerError, "identity")
 	})
 	t.Run("the account of a known identity cannot be read", func(t *testing.T) {
-		g, _ := prepare(t)
+		g, idp := prepare(t)
 		uid, _ := g.signUp("alice")
 		if err := g.st.PutIdentity(context.Background(), models.Identity{UserID: uid, Provider: "idp", Subject: "subject-1"}); err != nil {
 			t.Fatal(err)
 		}
 		state, cookie, _ := g.beginProvider("idp", map[string]any{})
-		breakTable(t, g.st, "users")
+		g.breakUsersWhenTheCodeIsExchanged(idp)
 		wantStatus(t, g.do("POST", "/auth/providers/idp/callback", map[string]string{"state": state, "code": "c"}, cookie), http.StatusInternalServerError, "account")
 	})
 	t.Run("the session of a known identity cannot be started", func(t *testing.T) {
@@ -442,9 +460,9 @@ func TestAProviderSignInFailsCleanlyWhenTheStoreLetsItDown(t *testing.T) {
 		wantStatus(t, g.do("POST", "/auth/providers/idp/callback", map[string]string{"state": state, "code": "c"}, cookie), http.StatusInternalServerError, "settings")
 	})
 	t.Run("the new account cannot be made", func(t *testing.T) {
-		g, _ := prepare(t)
+		g, idp := prepare(t)
 		state, cookie, _ := g.beginProvider("idp", map[string]any{})
-		breakTable(t, g.st, "users")
+		g.breakUsersWhenTheCodeIsExchanged(idp)
 		wantStatus(t, g.do("POST", "/auth/providers/idp/callback", map[string]string{"state": state, "code": "c"}, cookie), http.StatusInternalServerError, "new account")
 	})
 	t.Run("the identity cannot be linked", func(t *testing.T) {
@@ -457,7 +475,7 @@ func TestAProviderSignInFailsCleanlyWhenTheStoreLetsItDown(t *testing.T) {
 }
 
 func TestALoginOfAnotherAccountCannotBeLinkedToMe(t *testing.T) {
-	g := newRig(t)
+	g := newProviderRig(t)
 	idp := newOAuthFake(t)
 	g.addProvider(idp.provider())
 	bob, _ := g.signUp("bob")

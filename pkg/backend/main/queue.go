@@ -37,11 +37,11 @@ func (t *tunable) Set(d time.Duration) { t.ns.Store(int64(d)) }
 
 // enqueueSpec describes a job to queue.
 type enqueueSpec struct {
-	UserID      int64
+	UserID      int64 // 0: the job belongs to no user
 	Kind        string
 	Origin      string
 	Interactive bool   // somebody waits for it: it needs a running worker, and goes first
-	Dedupe      string // at most one active job per key; empty: a key made from the kind and the user
+	Dedupe      string // at most one active job per key; empty: a key made from the kind and the user (none without a user)
 	Payload     any    // JSON-encoded parameters
 	Expires     time.Duration
 	// Timeout raises the hard limit of an attempt above the kind's setting (a sync of many days
@@ -49,8 +49,13 @@ type enqueueSpec struct {
 	Timeout time.Duration
 }
 
-// maxQueuedJobsPerKind is how many jobs of one kind a person may have waiting.
-const maxQueuedJobsPerKind = 10
+// maxQueuedJobsPerKind is how many jobs of one kind a person may have waiting. A job that belongs to
+// no person (a visitor's sign-in) has a limit of its own for everybody together, because anybody may
+// start one.
+const (
+	maxQueuedJobsPerKind   = 10
+	maxQueuedAnonymousJobs = 64
+)
 
 // enqueueJob queues a job under the settings of its kind. When an active job with the same key
 // exists, that one is returned and created is false. It refuses with errKindPaused when the kind is
@@ -77,11 +82,15 @@ func (s *Backend) enqueueJob(ctx context.Context, e enqueueSpec) (job models.Job
 	// Jobs are served first come, first served, so one person who queues without end would delay
 	// everybody else's. A person's requests (not the scheduler's) are capped per kind.
 	if e.Origin != models.JobOriginSchedule {
-		waiting, err := s.store.ListJobs(ctx, models.JobFilter{UserID: e.UserID, Kinds: []string{e.Kind}, States: []string{models.JobQueued}, Limit: maxQueuedJobsPerKind})
+		limit := maxQueuedJobsPerKind
+		if e.UserID == 0 {
+			limit = maxQueuedAnonymousJobs
+		}
+		waiting, err := s.store.ListJobs(ctx, models.JobFilter{UserID: e.UserID, Kinds: []string{e.Kind}, States: []string{models.JobQueued}, Limit: limit})
 		if err != nil {
 			return models.Job{}, false, err
 		}
-		if len(waiting) >= maxQueuedJobsPerKind {
+		if len(waiting) >= limit {
 			return models.Job{}, false, errTooManyJobs
 		}
 	}
@@ -90,7 +99,7 @@ func (s *Backend) enqueueJob(ctx context.Context, e enqueueSpec) (job models.Job
 		return models.Job{}, false, err
 	}
 	key := e.Dedupe
-	if key == "" {
+	if key == "" && e.UserID != 0 { // a job without a user has no such key: every one is its own
 		key = fmt.Sprintf("%s:%d", spec.Kind, e.UserID)
 	}
 	n := models.NewJob{

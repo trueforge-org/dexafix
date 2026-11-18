@@ -16,53 +16,6 @@ import (
 // guard answers on the address the dialer resolved to.
 const privateHTTPS = "https://10.255.255.1/"
 
-func TestTheProviderClientRefusesPrivateAddressesUnlessAllowed(t *testing.T) {
-	g := newRig(t)
-	_, err := g.b.httpClient.Get(privateHTTPS)
-	if !errors.Is(err, netguard.ErrBlocked) {
-		t.Fatalf("a private address by default: %v, want it refused", err)
-	}
-	_, err = g.b.httpClient.Get("https://169.254.169.254/latest/meta-data/")
-	if !errors.Is(err, netguard.ErrBlocked) {
-		t.Fatalf("the metadata address: %v, want it refused", err)
-	}
-}
-
-func TestTheProviderClientHoldsRedirectsToTheRulesOfTheAddressOfAnAdministrator(t *testing.T) {
-	g := newRig(t)
-	redirect := func(to string) string {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, to, http.StatusFound) }))
-		t.Cleanup(srv.Close)
-		return srv.URL
-	}
-	t.Run("a redirect to a private address is refused at the dial", func(t *testing.T) {
-		if _, err := g.b.httpClient.Get(redirect(privateHTTPS)); !errors.Is(err, netguard.ErrBlocked) {
-			t.Fatalf("got %v, want the guard to refuse it", err)
-		}
-	})
-	t.Run("a redirect to the metadata address is refused", func(t *testing.T) {
-		if _, err := g.b.httpClient.Get(redirect("https://169.254.169.254/")); !errors.Is(err, netguard.ErrBlocked) {
-			t.Fatalf("got %v, want the guard to refuse it", err)
-		}
-	})
-	t.Run("a redirect to plain http on another host is refused", func(t *testing.T) {
-		_, err := g.b.httpClient.Get(redirect("http://example.com/"))
-		if err == nil || !strings.Contains(err.Error(), "not allowed") {
-			t.Fatalf("got %v, want a refused redirect", err)
-		}
-	})
-	t.Run("a loop ends", func(t *testing.T) {
-		var self string
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Redirect(w, r, self, http.StatusFound) }))
-		t.Cleanup(srv.Close)
-		self = srv.URL
-		_, err := g.b.httpClient.Get(self)
-		if err == nil || !strings.Contains(err.Error(), "too many redirects") {
-			t.Fatalf("got %v, want the loop to end", err)
-		}
-	})
-}
-
 func TestTheAdministratorIsToldWhyAProviderOrMailServerCannotBeReachedWithoutTheirAnswer(t *testing.T) {
 	provider := func(issuer string) url.Values {
 		return url.Values{"kind": {"oidc"}, "slug": {"g"}, "label": {"G"}, "client_id": {"c"}, "client_secret": {"s"}, "issuer": {issuer}}
@@ -204,28 +157,4 @@ func mustAddr(t *testing.T, s string) netip.Addr {
 		t.Fatal(err)
 	}
 	return a
-}
-
-// The guard checks the address that is dialled, which behind a proxy is the proxy's: so the provider
-// client takes no proxy from the environment.
-func TestTheProviderClientTakesNoProxyFromTheEnvironment(t *testing.T) {
-	t.Setenv("HTTPS_PROXY", "http://proxy.internal:3128")
-	t.Setenv("HTTP_PROXY", "http://proxy.internal:3128")
-	g := newRig(t)
-	tr, ok := g.b.newProviderClient().Transport.(*http.Transport)
-	if !ok || tr.Proxy == nil {
-		t.Fatalf("transport %T", tr)
-	}
-	req, _ := http.NewRequest("GET", "https://idp.example.com/", nil)
-	if u, err := tr.Proxy(req); err != nil || u != nil {
-		t.Fatalf("a proxy was used although private addresses are not allowed: %v %v", u, err)
-	}
-	// With private addresses allowed (an administrator's choice) the environment decides, as before
-	// (http.ProxyFromEnvironment reads it once per process, so only that it asks is checked here).
-	l := *g.b.cfg()
-	l.allowPrivateProviders = true
-	g.b.swapSettings(&l)
-	if _, err := g.b.newProviderClient().Transport.(*http.Transport).Proxy(req); err != nil {
-		t.Fatalf("%v", err)
-	}
 }

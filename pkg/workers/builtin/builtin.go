@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/trueforge-org/dexafix/pkg/shared/workerapi"
+	"github.com/trueforge-org/dexafix/pkg/workers/oidc"
 	"github.com/trueforge-org/dexafix/pkg/workers/runner"
 	"github.com/trueforge-org/dexafix/pkg/workers/strengthlevel"
 	"github.com/trueforge-org/dexafix/pkg/workers/withings"
@@ -17,7 +18,8 @@ import (
 
 // Options are what tests change; production uses the zero value.
 type Options struct {
-	// HTTPClient is used for outside calls; nil gives each provider its own default.
+	// HTTPClient is used for outside calls; nil gives each provider its own default (the sign-in
+	// providers' guarded client follows the administrator's setting for private addresses).
 	HTTPClient *http.Client
 	// WithingsAPIBase points the Withings worker at another address.
 	WithingsAPIBase string
@@ -32,6 +34,9 @@ var providers = map[string]func(Options) map[string]runner.Handler{
 	},
 	workerapi.ProviderStrengthLevel: func(o Options) map[string]runner.Handler {
 		return strengthlevel.New(strengthlevel.Config{Base: o.StrengthLevelBase}, o.HTTPClient).Handlers()
+	},
+	workerapi.ProviderOIDC: func(o Options) map[string]runner.Handler {
+		return oidc.New(o.HTTPClient).Handlers()
 	},
 }
 
