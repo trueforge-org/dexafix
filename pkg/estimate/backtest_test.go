@@ -30,6 +30,8 @@ import (
 	"github.com/trueforge-org/dexafix/pkg/models"
 )
 
+var exportTZ = flag.String("tz", "UTC", "time zone of the export's user for the real-data backtest, as in their settings: it decides which day a reading belongs to")
+
 var exportPath = flag.String("export", "", "DexaFix body-data export for the real-data backtest (default: dexafix-userdata.json in the repository root)")
 
 const (
@@ -378,12 +380,12 @@ func leanOf(s models.DexaScan) (float64, bool) {
 
 // dayNoiseBF is the standard deviation of one day's body fat % around its neighbour, from the
 // differences of consecutive days (which carry the noise of two days).
-func dayNoiseBF(readings []models.ScaleReading) float64 {
+func dayNoiseBF(readings []models.ScaleReading, loc *time.Location) float64 {
 	sum, cnt := map[time.Time]float64{}, map[time.Time]int{}
 	for _, r := range readings {
 		if r.FatRatioPct != nil {
-			sum[day(r.MeasuredAt)] += *r.FatRatioPct
-			cnt[day(r.MeasuredAt)]++
+			sum[localDay(r.MeasuredAt, loc)] += *r.FatRatioPct
+			cnt[localDay(r.MeasuredAt, loc)]++
 		}
 	}
 	var diffs []float64
@@ -413,7 +415,7 @@ func dayNoiseBF(readings []models.ScaleReading) float64 {
 //     noise, and a slope of 0 leaves them as they are. Nothing feeds back into the truth.
 //   - Fake scans are added, with the error of a scan, on days whose lean mass is at least btMinLeanGapKg away
 //     from that of every other scan (the farthest first), until there are minScans.
-func realWorld(scans []models.DexaScan, readings []models.ScaleReading, slope float64, minScans int, seed uint64) (world, float64, bool) {
+func realWorld(scans []models.DexaScan, readings []models.ScaleReading, loc *time.Location, slope float64, minScans int, seed uint64) (world, float64, bool) {
 	if len(scans) == 0 || scans[0].FatRatioPct == nil {
 		return world{}, 0, false
 	}
@@ -422,13 +424,13 @@ func realWorld(scans []models.DexaScan, readings []models.ScaleReading, slope fl
 		nbf, nw int
 	}{}
 	for _, r := range readings {
-		a := daily[day(r.MeasuredAt)]
+		a := daily[localDay(r.MeasuredAt, loc)]
 		if a == nil {
 			a = &struct {
 				bf, w   float64
 				nbf, nw int
 			}{}
-			daily[day(r.MeasuredAt)] = a
+			daily[localDay(r.MeasuredAt, loc)] = a
 		}
 		if r.FatRatioPct != nil {
 			a.bf += *r.FatRatioPct
@@ -492,7 +494,7 @@ func realWorld(scans []models.DexaScan, readings []models.ScaleReading, slope fl
 
 	w.readings = make([]models.ScaleReading, len(readings))
 	for i, r := range readings {
-		if l, ok := lean[day(r.MeasuredAt)]; ok && r.FatRatioPct != nil {
+		if l, ok := lean[localDay(r.MeasuredAt, loc)]; ok && r.FatRatioPct != nil {
 			moved := *r.FatRatioPct - (law.at(l) - off0)
 			r.FatRatioPct = &moved
 		}
@@ -503,7 +505,7 @@ func realWorld(scans []models.DexaScan, readings []models.ScaleReading, slope fl
 	hasReading := map[time.Time]bool{}
 	for _, r := range readings {
 		if r.FatRatioPct != nil && r.WeightKg != nil {
-			hasReading[day(r.MeasuredAt)] = true
+			hasReading[localDay(r.MeasuredAt, loc)] = true
 		}
 	}
 	leanOfScan := func(s models.DexaScan) float64 {
@@ -549,14 +551,23 @@ func realWorld(scans []models.DexaScan, readings []models.ScaleReading, slope fl
 
 func TestBacktestOnTheRealExportWithFakeScansAddedWhenThereAreTooFew(t *testing.T) {
 	scans, readings := loadExport(t)
-	t.Logf("export: %d scans, %d readings; scale noise on one day ≈ %.2f pp of body fat", len(scans), len(readings), dayNoiseBF(readings))
+	loc, err := time.LoadLocation(*exportTZ)
+	if err != nil {
+		t.Fatalf("time zone %q: %v", *exportTZ, err)
+	}
+	// As production calls Compute: the user's time zone, and the last value held up to the last reading's day.
+	var lastReading time.Time
+	for _, r := range readings {
+		lastReading = latest(lastReading, r.MeasuredAt)
+	}
+	t.Logf("export: %d scans, %d readings, time zone %s; scale noise on one day ≈ %.2f pp of body fat", len(scans), len(readings), loc, dayNoiseBF(readings, loc))
 	for _, slope := range btSlopes {
 		// As many scans as the history has room for: 4 if it can, else 3, else 2.
 		var w world
 		var spread float64
 		ok := false
 		for _, n := range []int{4, 3, 2} {
-			if w, spread, ok = realWorld(scans, readings, slope, max(n, len(scans)), 3); ok {
+			if w, spread, ok = realWorld(scans, readings, loc, slope, max(n, len(scans)), 3); ok {
 				break
 			}
 		}
@@ -568,6 +579,7 @@ func TestBacktestOnTheRealExportWithFakeScansAddedWhenThereAreTooFew(t *testing.
 			t.Errorf("slope %+.2f: the truth on the real scan's day is %.4f, the scan says %.4f", slope, got, want)
 		}
 		for _, m := range methods {
+			m.opts.Location, m.opts.Today = loc, lastReading
 			r := runBacktest(w, m)
 			t.Logf("real readings, %d real + %d fake scans (lean mass spread %.1f kg), slope %+.2f  %-6s  MAE pp: after scan 2 %.2f, after scan 3 %.2f, leave one out %.2f",
 				len(scans), len(w.scans)-len(scans), spread, slope, m.name, r.fwd2, r.fwd3, r.loo)
@@ -575,6 +587,7 @@ func TestBacktestOnTheRealExportWithFakeScansAddedWhenThereAreTooFew(t *testing.
 	}
 	if len(scans) >= 3 {
 		for _, m := range methods {
+			m.opts.Location, m.opts.Today = loc, lastReading
 			t.Logf("real scans only, %-6s  MAE of each scan predicted from the earlier ones: %.2f pp", m.name, scanForwardMAE(scans, readings, m))
 		}
 	} else {
@@ -589,4 +602,11 @@ func TestBacktestScanForwardErrorCanBeMeasuredOnAFakeHistory(t *testing.T) {
 	if math.IsNaN(got) || got <= 0 || got > 10 {
 		t.Errorf("error of the scans predicted from earlier scans: %v", got)
 	}
+}
+
+func latest(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }
