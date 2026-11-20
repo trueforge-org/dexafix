@@ -5,6 +5,7 @@
 *.key
 /dexafix
 /dist/
+dexafix-userdata.json
 
 # browser captures can hold passwords and session cookies
 *.har
