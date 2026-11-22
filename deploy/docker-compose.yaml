@@ -252,7 +252,7 @@ services:
   # The failed sign-in counters, the single-use values and the sessions (see the top of this file).
   valkey:
     <<: [*limits-valkey, *logging]
-    image: ghcr.io/trueforge-org/valkey:9@sha256:a961801165d3b4afc065387d7acd3321768310aa10d6d9a13f86296c77b823c5
+    image: ghcr.io/trueforge-org/valkey:9@sha256:ae7fe6bf2d849a671056ceb99a6ba5ed183c2aaf00e0da70a0821d373b643ff8
     restart: unless-stopped
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
