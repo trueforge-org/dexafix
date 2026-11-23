@@ -21,7 +21,7 @@ require (
 	github.com/valkey-io/valkey-go v1.0.80
 	github.com/yuin/goldmark v1.8.7
 	golang.org/x/crypto v0.59.0
-	golang.org/x/crypto/x509roots/fallback v0.0.0-20261123165210-6c21c5864259
+	golang.org/x/crypto/x509roots/fallback v0.0.0-20261123192653-4dc4fb521066
 	golang.org/x/oauth2 v0.38.0
 	modernc.org/sqlite v1.63.0
 	rsc.io/qr v0.2.0
