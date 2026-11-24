@@ -11,7 +11,7 @@ require (
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/pires/go-proxyproto v0.16.0
 	github.com/pressly/goose/v3 v3.30.1
-	github.com/quic-go/quic-go v0.65.0
+	github.com/quic-go/quic-go v0.66.0
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
 	github.com/trueforge-org/forgetool/v4 v4.1.1
