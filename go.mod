@@ -10,7 +10,7 @@ require (
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/jackc/pgx/v5 v5.13.0
 	github.com/pires/go-proxyproto v0.16.0
-	github.com/pressly/goose/v3 v3.30.1
+	github.com/pressly/goose/v3 v3.30.2
 	github.com/quic-go/quic-go v0.66.0
 	github.com/rs/zerolog v1.35.1
 	github.com/spf13/cobra v1.10.2
@@ -47,7 +47,6 @@ require (
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/sethvargo/go-retry v0.5.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/tmthrgd/go-hex v0.0.0-20190904060850-447a3041c3bc // indirect
