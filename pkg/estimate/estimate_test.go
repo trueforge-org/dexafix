@@ -562,17 +562,17 @@ func TestPhysiqueScoreFollowsTheFormula(t *testing.T) {
 	for _, tc := range []struct {
 		name         string
 		height       float64
-		weight, fat  float64 // fat mass in kg
+		weight, fat  float64 // fat is body fat %
 		want         float64
 		withoutScore bool
 	}{
-		{name: "180 cm and 10 kg of fat", height: 180, weight: 80, fat: 10, want: score(70/3.24, 1.8, 10)},
-		{name: "200 cm and 20 kg of fat", height: 200, weight: 100, fat: 20, want: score(20, 2, 20)},
-		{name: "exactly 1 kg of fat has no answer", height: 180, weight: 80, fat: 1, withoutScore: true},
-		{name: "just above 1 kg of fat overflows", height: 180, weight: 80, fat: 1.0000000001, withoutScore: true},
+		{name: "180 cm and 12.5% body fat", height: 180, weight: 80, fat: 12.5, want: score(70/3.24, 1.8, 0.125)},
+		{name: "200 cm and 20% body fat", height: 200, weight: 100, fat: 20, want: score(20, 2, 0.2)},
+		{name: "12% body fat adds nothing to the bracket", height: 180, weight: 80, fat: 12, want: 70.4 / 3.24},
+		{name: "100% body fat has no answer", height: 180, weight: 80, fat: 100, withoutScore: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := bodyComp(d(1, 1), tc.weight, tc.fat/tc.weight*100)
+			r := bodyComp(d(1, 1), tc.weight, tc.fat)
 			v := find(t, Compute(nil, []models.ScaleReading{r}, Options{HeightCm: f(tc.height)}), d(1, 1)).Values
 			got, ok := v["physique_score"]
 			if tc.withoutScore {
@@ -584,24 +584,27 @@ func TestPhysiqueScoreFollowsTheFormula(t *testing.T) {
 			if !ok || math.Abs(got.V-tc.want) > 1e-6*math.Abs(tc.want) || got.Corrected {
 				t.Fatalf("got %+v, want %v", got, tc.want)
 			}
+			if got.V > 35 {
+				t.Errorf("a physique score above 35 is not expected: %v", got.V)
+			}
 		})
 	}
-	t.Run("left out without a fat mass", func(t *testing.T) {
+	t.Run("left out without body fat", func(t *testing.T) {
 		vals := map[string]Value{"ffmi": {V: 20}}
 		derivePhysiqueScore(vals, f(180))
 		if _, ok := vals["physique_score"]; ok {
 			t.Fatalf("%+v", vals)
 		}
 	})
-	t.Run("corrected when the fat mass is", func(t *testing.T) {
-		vals := map[string]Value{"ffmi": {V: 20}, "fat_mass_kg": {V: 10, Corrected: true}}
+	t.Run("corrected when the body fat is", func(t *testing.T) {
+		vals := map[string]Value{"ffmi": {V: 20}, "fat_ratio_pct": {V: 10, Corrected: true}}
 		derivePhysiqueScore(vals, f(180))
 		if got := vals["physique_score"]; !got.Corrected {
 			t.Fatalf("%+v", got)
 		}
 	})
-	t.Run("corrected when the fat mass is from a scan", func(t *testing.T) {
-		vals := map[string]Value{"ffmi": {V: 20}, "fat_mass_kg": {V: 10, Origin: OriginDexa}}
+	t.Run("corrected when the body fat is from a scan", func(t *testing.T) {
+		vals := map[string]Value{"ffmi": {V: 20}, "fat_ratio_pct": {V: 10, Origin: OriginDexa}}
 		derivePhysiqueScore(vals, f(180))
 		if got := vals["physique_score"]; !got.Corrected {
 			t.Fatalf("%+v", got)

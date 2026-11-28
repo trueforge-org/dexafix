@@ -537,20 +537,17 @@ func deriveBodyIndices(vals map[string]Value, heightCm *float64) {
 //
 //	[FFMI + 6.1 × (1.8 − H)] × exp(−1.5 × [(BF / (1 − BF)) − (0.12 / 0.88)])
 //
-// with H the height in metres, BF the fat mass in kg (the amount of fat, not a percentage or a
-// fraction) and FFMI the day's FFMI, so it needs the height, FFMI and fat mass. It is left out
-// where the formula has no finite answer (a fat mass of exactly 1 kg, or an overflow).
+// with H the height in metres, BF the body fat as a fraction (12% is 0.12) and FFMI the day's FFMI,
+// so it needs the height, FFMI and body fat %. It is left out at 100% body fat, where
+// BF / (1 − BF) is undefined.
 func derivePhysiqueScore(vals map[string]Value, heightCm *float64) {
 	ffmi, haveFFMI := vals["ffmi"]
-	fat, haveFat := vals["fat_mass_kg"]
-	if heightCm == nil || *heightCm <= 0 || !haveFFMI || !haveFat || fat.V == 1 {
+	fat, haveFat := vals["fat_ratio_pct"]
+	if heightCm == nil || *heightCm <= 0 || !haveFFMI || !haveFat || fat.V >= 100 {
 		return
 	}
-	h, bf := *heightCm/100, fat.V
+	h, bf := *heightCm/100, fat.V/100
 	score := (ffmi.V + 6.1*(1.8-h)) * math.Exp(-1.5*((bf/(1-bf))-(0.12/0.88)))
-	if math.IsNaN(score) || math.IsInf(score, 0) {
-		return
-	}
 	v := calculatedValue(ffmi, score)
 	v.Corrected = v.Corrected || fat.Corrected || fat.Origin == OriginDexa
 	vals["physique_score"] = v

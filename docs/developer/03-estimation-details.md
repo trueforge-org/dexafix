@@ -77,9 +77,8 @@ field is handled on its own.
      comes from the profile in cm. Without a height, these four are left out.
      The Physique Score (`physique_score`) = [FFMI + 6.1 × (1.8 − H)] ×
      exp(−1.5 × [(BF / (1 − BF)) − (0.12 / 0.88)]), with H the height in metres
-     and BF the fat mass in kg (the amount of fat, not a percentage or a
-     fraction); it is left out without a height, FFMI or fat mass, and where the
-     result is not a finite number (BF of exactly 1, or an overflow). They are marked `corrected: true` when the value
+     and BF the body fat as a fraction (`fat_ratio_pct` / 100, so 12% is 0.12); it
+     is left out without a height, FFMI or body fat %, and at 100% body fat. They are marked `corrected: true` when the value
      they come from is corrected or from DEXA. The A/G ratio = android fat % /
      gynoid fat %, from DEXA scans that have both values (origin `dexa` on the
      scan day). After a scan, the latest ratio is repeated (origin `held`)
