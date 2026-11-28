@@ -35,7 +35,7 @@ The full rules are in [Estimation details](../developer/03-estimation-details.md
 
 ## The daily estimates step by step {#how-estimates-work}
 
-Each field is handled on its own. The estimated fields are weight, body fat, fat mass, fat-free mass, bone mass, lean mass, hydration, visceral fat index, BMI, FMI, LMI and the A/G ratio.
+Each field is handled on its own. The estimated fields are weight, body fat, fat mass, fat-free mass, bone mass, lean mass, hydration, visceral fat index, BMI, FMI, LMI, FFMI, the Physique Score and the A/G ratio.
 
 1. **Daily average.** Readings are averaged per day, per field and per group (method plus athlete mode). Missing values are ignored.
 2. **Most accurate reading.** Each day uses the group whose method ranks highest for that field ([Method accuracy](#method-accuracy)). A method without a value for the field is skipped, so a caliper reading with only body fat does not hide the scale weight.
@@ -44,7 +44,7 @@ Each field is handled on its own. The estimated fields are weight, body fat, fat
 5. **Calibration.** On each DEXA day, the offset (DEXA minus the scale's reading that day) is recorded. See [Calibration](#calibration).
 6. **Estimate.** A DEXA value is used as it is (origin `dexa`). Other days are corrected by the offset: before the first calibration with its offset, between two calibrations blended with a smooth curve, after the last calibration with the last offset.
 
-Fat mass is calculated as weight x body fat % / 100 on every day with a weight, and fat-free mass as weight minus fat mass, so the two always add up to the weight. Lean mass is fat-free mass minus bone mass (only on days with both). BMI, FMI and LMI are weight, fat mass and lean mass divided by height squared; without a height in Settings they are left out. The A/G ratio is android fat % divided by gynoid fat %, from DEXA scans; after a scan the latest ratio is held until the next one.
+Fat mass is calculated as weight x body fat % / 100 on every day with a weight, and fat-free mass as weight minus fat mass, so the two always add up to the weight. Lean mass is fat-free mass minus bone mass (only on days with both). BMI, FMI, LMI and FFMI are weight, fat mass, lean mass and fat-free mass divided by height squared. The Physique Score is [FFMI + 6.1 × (1.8 − H)] × exp(−1.5 × [(BF / (1 − BF)) − (0.12 / 0.88)]), where H is your height in metres, BF is your fat mass in kg (the amount of fat, not a percentage) and FFMI is that day's FFMI. Without a height in Settings these are left out, and so is the Physique Score where the formula has no finite answer (a fat mass of exactly 1 kg). The A/G ratio is android fat % divided by gynoid fat %, from DEXA scans; after a scan the latest ratio is held until the next one.
 
 Only body fat % and bone mass are corrected with an offset. Weight is never corrected, nor are hydration and visceral fat index.
 

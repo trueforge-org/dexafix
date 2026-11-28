@@ -25,6 +25,7 @@
 package estimate
 
 import (
+	"math"
 	"sort"
 	"time"
 
@@ -72,6 +73,8 @@ var Fields = []Field{
 	{"bmi", "BMI", "kg/m²", false},
 	{"fmi", "FMI", "kg/m²", false},
 	{"lmi", "LMI", "kg/m²", false},
+	{"ffmi", "FFMI", "kg/m²", false},
+	{"physique_score", "Physique Score", "", false},
 	{"ag_ratio", "A/G ratio", "", false},
 }
 
@@ -87,7 +90,7 @@ type Options struct {
 	Ranking []string
 	// AthleteDefault breaks ties between the normal and athlete group of the same method.
 	AthleteDefault bool
-	// HeightCm is needed for BMI, FMI and LMI. Without it they are left out.
+	// HeightCm is needed for BMI, FMI, LMI, FFMI and the Physique Score. Without it they are left out.
 	HeightCm *float64
 }
 
@@ -513,7 +516,8 @@ func deriveLeanMass(vals map[string]Value) {
 	vals["lean_mass_kg"] = lean
 }
 
-// deriveBodyIndices sets BMI, FMI and LMI: weight, fat mass and lean mass divided by height squared.
+// deriveBodyIndices sets BMI, FMI, LMI and FFMI: weight, fat mass, lean mass and fat-free mass
+// divided by height squared.
 func deriveBodyIndices(vals map[string]Value, heightCm *float64) {
 	if heightCm == nil || *heightCm <= 0 {
 		return
@@ -521,11 +525,35 @@ func deriveBodyIndices(vals map[string]Value, heightCm *float64) {
 	metres := *heightCm / 100
 	for _, index := range []struct{ key, from string }{
 		{"bmi", "weight_kg"}, {"fmi", "fat_mass_kg"}, {"lmi", "lean_mass_kg"},
+		{"ffmi", "fat_free_mass_kg"},
 	} {
 		if source, ok := vals[index.from]; ok {
 			vals[index.key] = calculatedValue(source, source.V/(metres*metres))
 		}
 	}
+}
+
+// derivePhysiqueScore sets the Physique Score:
+//
+//	[FFMI + 6.1 × (1.8 − H)] × exp(−1.5 × [(BF / (1 − BF)) − (0.12 / 0.88)])
+//
+// with H the height in metres, BF the fat mass in kg (the amount of fat, not a percentage or a
+// fraction) and FFMI the day's FFMI, so it needs the height, FFMI and fat mass. It is left out
+// where the formula has no finite answer (a fat mass of exactly 1 kg, or an overflow).
+func derivePhysiqueScore(vals map[string]Value, heightCm *float64) {
+	ffmi, haveFFMI := vals["ffmi"]
+	fat, haveFat := vals["fat_mass_kg"]
+	if heightCm == nil || *heightCm <= 0 || !haveFFMI || !haveFat || fat.V == 1 {
+		return
+	}
+	h, bf := *heightCm/100, fat.V
+	score := (ffmi.V + 6.1*(1.8-h)) * math.Exp(-1.5*((bf/(1-bf))-(0.12/0.88)))
+	if math.IsNaN(score) || math.IsInf(score, 0) {
+		return
+	}
+	v := calculatedValue(ffmi, score)
+	v.Corrected = v.Corrected || fat.Corrected || fat.Origin == OriginDexa
+	vals["physique_score"] = v
 }
 
 // calculatedValue returns value as a Value calculated from source: it takes over the origin and
@@ -730,6 +758,7 @@ func Compute(scans []models.DexaScan, readings []models.ScaleReading, o Options)
 		deriveFromBodyFat(est.Values)
 		deriveLeanMass(est.Values)
 		deriveBodyIndices(est.Values, o.HeightCm)
+		derivePhysiqueScore(est.Values, o.HeightCm)
 		if _, ok := est.Values["ag_ratio"]; !ok {
 			// A/G is only measured by DEXA: keep the latest earlier scan's ratio.
 			for i := len(dexaDays) - 1; i >= 0; i-- {

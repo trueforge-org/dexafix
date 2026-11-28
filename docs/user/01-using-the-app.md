@@ -10,7 +10,7 @@ scale readings in between. You get one estimated value per day.
 1. Create the first account. On a new server it becomes the administrator.
    After that, new accounts are closed until an administrator allows sign-ups
    (see [Signing up](02-accounts-and-sign-in.md#registration)).
-2. Enter your height under Settings (needed for BMI, FMI and LMI).
+2. Enter your height under Settings (needed for BMI, FMI, LMI, FFMI and the Physique Score).
 3. Add one or more [DEXA scans](06-scans-and-readings.md#dexa-page).
 4. Add [scale readings](06-scans-and-readings.md#scale-page) by hand, by the
    [JSON API](../developer/02-json-api.md), or by importing them from
@@ -91,7 +91,7 @@ and hides columns, and the choice is remembered per account.
 
 Username (unique), first and last name (both optional), e-mail (required, it is
 how you sign in; changing it asks for your current password) and height in cm
-(50 to 280, optional). Height is needed for BMI, FMI and LMI.
+(50 to 280, optional). Height is needed for BMI, FMI, LMI, FFMI and the Physique Score.
 
 ### Time zone {#time-zone}
 

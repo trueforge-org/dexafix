@@ -542,17 +542,71 @@ func TestBodyIndicesUseHeight(t *testing.T) {
 	r.BoneMassKg = f(3)
 	rs := []models.ScaleReading{r}
 	v := find(t, Compute(nil, rs, Options{HeightCm: f(200)}), d(1, 1)).Values
-	for key, want := range map[string]float64{"bmi": 25, "fmi": 5, "lmi": 19.25} {
+	for key, want := range map[string]float64{"bmi": 25, "fmi": 5, "lmi": 19.25, "ffmi": 20} {
 		if got := v[key]; !near(got.V, want) || got.Corrected {
 			t.Errorf("%s: %+v", key, got)
 		}
 	}
 	v = find(t, Compute(nil, rs, Options{}), d(1, 1)).Values
-	for _, key := range []string{"bmi", "fmi", "lmi"} {
+	for _, key := range []string{"bmi", "fmi", "lmi", "ffmi", "physique_score"} {
 		if got, ok := v[key]; ok {
 			t.Errorf("%s without height: %+v", key, got)
 		}
 	}
+}
+
+func TestPhysiqueScoreFollowsTheFormula(t *testing.T) {
+	score := func(ffmi, h, bf float64) float64 {
+		return (ffmi + 6.1*(1.8-h)) * math.Exp(-1.5*((bf/(1-bf))-(0.12/0.88)))
+	}
+	for _, tc := range []struct {
+		name         string
+		height       float64
+		weight, fat  float64 // fat mass in kg
+		want         float64
+		withoutScore bool
+	}{
+		{name: "180 cm and 10 kg of fat", height: 180, weight: 80, fat: 10, want: score(70/3.24, 1.8, 10)},
+		{name: "200 cm and 20 kg of fat", height: 200, weight: 100, fat: 20, want: score(20, 2, 20)},
+		{name: "exactly 1 kg of fat has no answer", height: 180, weight: 80, fat: 1, withoutScore: true},
+		{name: "just above 1 kg of fat overflows", height: 180, weight: 80, fat: 1.0000000001, withoutScore: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := bodyComp(d(1, 1), tc.weight, tc.fat/tc.weight*100)
+			v := find(t, Compute(nil, []models.ScaleReading{r}, Options{HeightCm: f(tc.height)}), d(1, 1)).Values
+			got, ok := v["physique_score"]
+			if tc.withoutScore {
+				if ok {
+					t.Fatalf("expected no score: %+v", got)
+				}
+				return
+			}
+			if !ok || math.Abs(got.V-tc.want) > 1e-6*math.Abs(tc.want) || got.Corrected {
+				t.Fatalf("got %+v, want %v", got, tc.want)
+			}
+		})
+	}
+	t.Run("left out without a fat mass", func(t *testing.T) {
+		vals := map[string]Value{"ffmi": {V: 20}}
+		derivePhysiqueScore(vals, f(180))
+		if _, ok := vals["physique_score"]; ok {
+			t.Fatalf("%+v", vals)
+		}
+	})
+	t.Run("corrected when the fat mass is", func(t *testing.T) {
+		vals := map[string]Value{"ffmi": {V: 20}, "fat_mass_kg": {V: 10, Corrected: true}}
+		derivePhysiqueScore(vals, f(180))
+		if got := vals["physique_score"]; !got.Corrected {
+			t.Fatalf("%+v", got)
+		}
+	})
+	t.Run("corrected when the fat mass is from a scan", func(t *testing.T) {
+		vals := map[string]Value{"ffmi": {V: 20}, "fat_mass_kg": {V: 10, Origin: OriginDexa}}
+		derivePhysiqueScore(vals, f(180))
+		if got := vals["physique_score"]; !got.Corrected {
+			t.Fatalf("%+v", got)
+		}
+	})
 }
 
 func TestAndroidGynoidRatioComesFromDexaAndIsHeld(t *testing.T) {

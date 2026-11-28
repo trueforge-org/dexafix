@@ -73,8 +73,13 @@ field is handled on its own.
      mass or bone mass it comes from is corrected or from DEXA.
    - BMI = weight (kg) / height (m)², FMI = fat mass (kg) / height (m)² and
      LMI = lean mass (kg) / height (m)², where lean mass is the fat-free mass
-     minus the bone mass. Height comes from the profile in cm. Without a height,
-     these three are left out. They are marked `corrected: true` when the value
+     minus the bone mass, and FFMI = fat-free mass (kg) / height (m)². Height
+     comes from the profile in cm. Without a height, these four are left out.
+     The Physique Score (`physique_score`) = [FFMI + 6.1 × (1.8 − H)] ×
+     exp(−1.5 × [(BF / (1 − BF)) − (0.12 / 0.88)]), with H the height in metres
+     and BF the fat mass in kg (the amount of fat, not a percentage or a
+     fraction); it is left out without a height, FFMI or fat mass, and where the
+     result is not a finite number (BF of exactly 1, or an overflow). They are marked `corrected: true` when the value
      they come from is corrected or from DEXA. The A/G ratio = android fat % /
      gynoid fat %, from DEXA scans that have both values (origin `dexa` on the
      scan day). After a scan, the latest ratio is repeated (origin `held`)

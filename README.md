@@ -46,7 +46,7 @@ own data. Users sign in with a password or with an external provider.
 | --- | --- |
 | 📊 **Measurements and estimates** | Per-user DEXA scans and scale readings, entered in the browser or by JSON API. |
 | | Each reading records its measurement method (smart scale, caliper, BodPod, hydrostatic, tape, visual AI) and whether athlete mode was on. |
-| | One estimate per day for weight, body fat, fat mass, fat-free mass, lean mass, hydration, bone mass, visceral fat index, BMI, fat mass index (FMI), lean mass index (LMI) and the android/gynoid (A/G) fat ratio. |
+| | One estimate per day for weight, body fat, fat mass, fat-free mass, lean mass, hydration, bone mass, visceral fat index, BMI, fat mass index (FMI), lean mass index (LMI), fat-free mass index (FFMI), the Physique Score and the android/gynoid (A/G) fat ratio. |
 | 🔐 **Accounts and security** | Password sign-in, plus OpenID Connect, Sign in with Apple and OAuth 2.0 providers. See [Accounts and sign-in](docs/user/02-accounts-and-sign-in.md). |
 | | Passkeys (WebAuthn) for signing in without a password, with a device's fingerprint, face or PIN. See [Passkeys](docs/user/02-accounts-and-sign-in.md#passkeys-doc). |
 | | Password reset by one-time link, made by an administrator or requested by e-mail. See [Password reset](docs/user/02-accounts-and-sign-in.md#password-reset). |
